@@ -8,7 +8,7 @@ on:
 env:
   MANIFEST_URL: 'https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni'
   MANIFEST_BRANCH: 'twrp-4.4-deprecated'
-  DEVICE_TREE_URL: 'https://github.com/coara-chocomaru/SH06D-twrp'  # Assuming this tree is adaptable; replace with Android 5 compatible device tree if necessary
+  DEVICE_TREE_URL: 'https://github.com/coara-chocomaru/SH06D-twrp'
   DEVICE_TREE_BRANCH: 'main'
   DEVICE_PATH: 'device/shrp/sh06d'
   DEVICE_NAME: 'sh06d'
@@ -19,10 +19,10 @@ env:
 jobs:
   build:
     if: github.event.repository.owner.id == github.event.sender.id
-    runs-on: ubuntu-latest  # Host runner; build inside container for compatibility
+    runs-on: ubuntu-latest 
     container:
       image: ubuntu:14.04
-      options: --privileged  # Needed for potential loop devices or other build requirements
+      options: --privileged 
     permissions:
       contents: write
     steps:
@@ -36,7 +36,7 @@ jobs:
         echo "Device Path: ${{ env.DEVICE_PATH }}"
         echo "Device Name: ${{ env.DEVICE_NAME }}"
         echo "Makefile Name: ${{ env.MAKEFILE_NAME }}"
-        echo "Build Target: ${{ env.BUILD_TARGET }}"
+        echo "Build Target: ${{ env.BUILD_TARGET }}.img"
         echo "::endgroup::"
 
     - name: Check Out
