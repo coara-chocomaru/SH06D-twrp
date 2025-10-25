@@ -55,6 +55,7 @@ jobs:
           chmod a+x /root/bin/repo
           export PATH=/root/bin:$PATH
           ln -sf /usr/bin/python3 /usr/bin/python
+          rm -rf /usr/bin/python2
           # prepare workspace
           mkdir -p /workspace
           cd /workspace
