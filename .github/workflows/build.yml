@@ -55,9 +55,11 @@ jobs:
           chmod a+x /root/bin/repo
           sudo sed -i '1s|.*|#!/usr/bin/env python3|' /root/bin/repo
           sudo sed -i '/^def reexec/,/^def main()/d' /root/bin/repo
+          sed -i '/def reexec_self_if_needed/,/def main()/{
+          /def reexec_self_if_needed/!{/def main()/!d}
+           }' /root/bin/repo
           export PATH=/root/bin:$PATH
           ln -sf /usr/bin/python3 /usr/bin/python
-          rm -rf /usr/bin/python2
           # prepare workspace
           mkdir -p /workspace
           cd /workspace
