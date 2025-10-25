@@ -54,7 +54,7 @@ jobs:
           curl -sSfL https://web.archive.org/web/20151016162736/https://storage.googleapis.com/git-repo-downloads/repo -o /root/bin/repo
           chmod a+x /root/bin/repo
           export PATH=/root/bin:$PATH
-
+          ln -sf /usr/bin/python2.7 /usr/bin/python
           # prepare workspace
           mkdir -p /workspace
           cd /workspace
