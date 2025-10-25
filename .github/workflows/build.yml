@@ -69,7 +69,7 @@ jobs:
 
           # Install packages (may partially fail depending on repo availability)
           apt-get install -y --no-install-recommends \
-            ca-certificates curl git-core wget unzip bzip2 make \
+            ca-certificates git-core wget unzip bzip2 make \
             build-essential zip zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
             lib32ncurses5-dev libx11-dev lib32z1-dev ccache libgl1-mesa-dev \
             libxml2-utils xsltproc lzma lzop pngcrush imagemagick \
