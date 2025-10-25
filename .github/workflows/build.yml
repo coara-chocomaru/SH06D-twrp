@@ -51,7 +51,7 @@ jobs:
 
 
           mkdir -p /root/bin
-          curl -sSfL https://web.archive.org/web/20150526213620/https://storage.googleapis.com/git-repo-downloads/repo -o /root/bin/repo
+          curl -sSfL https://web.archive.org/web/20141021000358/https://storage.googleapis.com/git-repo-downloads/repo -o /root/bin/repo
           chmod a+x /root/bin/repo
           export PATH=/root/bin:$PATH
 
