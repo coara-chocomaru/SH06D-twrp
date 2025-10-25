@@ -85,10 +85,10 @@ jobs:
           git config --global user.email 'azwhikaru+37921907@github.com' || true
 
           # init and sync manifest
-          #python /root/bin/repo init --depth=1 -u "${MANIFEST_URL}" -b "${MANIFEST_BRANCH}"
-          #python /root/bin/repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
-          repo init --depth=1 -u "${MANIFEST_URL}" -b "${MANIFEST_BRANCH}"
-          repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+          python3 /root/bin/repo init --depth=1 -u "${MANIFEST_URL}" -b "${MANIFEST_BRANCH}"
+          python3 /root/bin/repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+          #repo init --depth=1 -u "${MANIFEST_URL}" -b "${MANIFEST_BRANCH}"
+          #repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
           # clone device tree into workspace path (safe replace)
           TARGET_DIR="/workspace/${DEVICE_PATH}"
