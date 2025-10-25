@@ -8,16 +8,21 @@ on:
 env:
   MANIFEST_URL: 'https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni'
   MANIFEST_BRANCH: 'twrp-4.4-deprecated'
-  DEVICE_TREE_URL: 'https://github.com/coara-chocomaru/SH06D-twrp'
+  DEVICE_TREE_URL: 'https://github.com/coara-chocomaru/SH06D-twrp'  # Assuming this tree is adaptable; replace with Android 5 compatible device tree if necessary
   DEVICE_TREE_BRANCH: 'main'
   DEVICE_PATH: 'device/shrp/sh06d'
   DEVICE_NAME: 'sh06d'
   MAKEFILE_NAME: 'omni_sh06d'
   BUILD_TARGET: 'recovery'
+  JAVA_VERSION: '7'
+
 jobs:
   build:
     if: github.event.repository.owner.id == github.event.sender.id
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest  # Host runner; build inside container for compatibility
+    container:
+      image: ubuntu:14.04
+      options: --privileged  # Needed for potential loop devices or other build requirements
     permissions:
       contents: write
     steps:
@@ -31,45 +36,51 @@ jobs:
         echo "Device Path: ${{ env.DEVICE_PATH }}"
         echo "Device Name: ${{ env.DEVICE_NAME }}"
         echo "Makefile Name: ${{ env.MAKEFILE_NAME }}"
-        echo "Build Target: ${{ env.BUILD_TARGET }}.img"
+        echo "Build Target: ${{ env.BUILD_TARGET }}"
         echo "::endgroup::"
- 
+
     - name: Check Out
       uses: actions/checkout@v3
 
-    - name: Cleanup
-      uses: rokibhasansagar/slimhub_actions@main
-
-    - name: Prepare the environment
+    - name: Update APT Sources for Ubuntu 14.04 (EOL Handling)
       run: |
-        sudo apt update
-        sudo apt -y upgrade
-        sudo apt -y install gperf gcc-multilib gcc-10-multilib g++-multilib g++-10-multilib libc6-dev \
-          lib32ncurses5-dev x11proto-core-dev libx11-dev tree lib32z-dev libgl1-mesa-dev libxml2-utils \
-          xsltproc bc ccache lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev \
-          libwxgtk3.0-gtk3-dev libxml2 lzop pngcrush schedtool squashfs-tools imagemagick \
-          libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libncurses5 python3
+        sudo sed -i 's|archive.ubuntu.com|old-releases.ubuntu.com|g' /etc/apt/sources.list
+        sudo sed -i 's|security.ubuntu.com|old-releases.ubuntu.com|g' /etc/apt/sources.list
+        sudo apt-get update -y
+        sudo apt-get install -y software-properties-common
 
-    - name: Install OpenJDK
-      uses: actions/setup-java@v3
-      with:
-        distribution: 'zulu'
-        java-version: '7'
+    - name: Cleanup
+      run: |
+        sudo apt-get clean
+        sudo rm -rf /var/lib/apt/lists/*
+
+    - name: Prepare the Environment
+      run: |
+        sudo apt-get update -y
+        sudo apt-get upgrade -y
+        sudo apt-get install -y git-core gnupg flex bison gperf build-essential \
+          zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
+          lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev ccache \
+          libgl1-mesa-dev libxml2-utils xsltproc unzip libbz2-dev lzma \
+          python bc schedtool lzop pngcrush imagemagick ncftp \
+          libncurses5-dev libsdl1.2-dev libwxgtk2.8-dev libstdc++6-4.8-dev \
+          lib32readline-gplv2-dev lib32z-dev liblz4-tool squashfs-tools \
+          openjdk-7-jdk  # Install Java 7 directly here for Android 5 compatibility
 
     - name: Setup SSH Keys
       if: ${{ startsWith(env.MANIFEST_URL, 'git@github.com') }}
       uses: webfactory/ssh-agent@v0.5.4
       with:
-          ssh-private-key: |
-              ${{ secrets.SSH_PRIVATE_KEY }}
+        ssh-private-key: |
+          ${{ secrets.SSH_PRIVATE_KEY }}
 
     - name: Install repo
       run: |
         mkdir -p ~/bin
         curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
         chmod a+x ~/bin/repo
-        sudo ln -sf ~/bin/repo /usr/bin/repo
-      
+        export PATH=~/bin:$PATH
+
     - name: Initialize repo
       run: |
         mkdir workspace
@@ -79,12 +90,12 @@ jobs:
         git config --global user.email "azwhikaru+37921907@github.com"
         repo init --depth=1 -u ${{ env.MANIFEST_URL }} -b ${{ env.MANIFEST_BRANCH }}
       id: pwd
-          
+
     - name: Repo Sync
       run: |
-        repo sync -j$(nproc --all) --force-sync
+        repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
       working-directory: workspace
-      
+
     - name: Move files to workspace
       run: |
         mkdir -p workspace/${{ env.DEVICE_PATH }}
@@ -99,35 +110,39 @@ jobs:
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
     - name: Set Swap Space
-      uses: pierotofy/set-swap-space@master
-      with:
-        swap-size-gb: 12
-
-    - name: Switch to Python2
       run: |
-        sudo apt -y install python2
-        sudo update-alternatives --install /usr/bin/python python /usr/bin/python2 1
+        sudo fallocate -l 12G /swapfile
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
+        echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
+    - name: Switch to Python 2 (Default in 14.04)
+      run: |
+        sudo apt-get install -y python2.7
+        sudo ln -sf /usr/bin/python2.7 /usr/bin/python
       continue-on-error: true
 
-    - name: Building recovery
+    - name: Building Android 4
       run: |
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
-        lunch ${{ env.MAKEFILE_NAME }}-eng && make clean && make ${{ env.BUILD_TARGET }}image -j$(nproc --all)
+        export LC_ALL=C  # Fix potential locale issues
+        lunch ${{ env.MAKEFILE_NAME }}-eng && make clean && make -j$(nproc --all) ${{ env.BUILD_TARGET }}
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
     - name: Upload to Release
       uses: softprops/action-gh-release@v1
       with:
-        files: | 
-          workspace/out/target/product/${{ env.DEVICE_NAME }}/${{ env.BUILD_TARGET }}.img
+        files: |
           workspace/out/target/product/${{ env.DEVICE_NAME }}/*.zip
+          workspace/out/target/product/${{ env.DEVICE_NAME }}/*.img
           workspace/out/target/product/${{ env.DEVICE_NAME }}/*vendor*.img
-        name: ${{ env.DEVICE_NAME }}-${{ github.run_id }}
+        name: ${{ env.DEVICE_NAME }}-android5-${{ github.run_id }}
         tag_name: ${{ github.run_id }}
         body: |
           Manifest: ${{ env.MANIFEST_BRANCH }}
           Device: ${{ env.DEVICE_NAME }}
-          Target: ${{ env.BUILD_TARGET }}.img
+          Target: ${{ env.BUILD_TARGET }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
