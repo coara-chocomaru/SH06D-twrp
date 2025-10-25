@@ -34,7 +34,7 @@ jobs:
           echo "Device Tree URL: ${{ env.DEVICE_TREE_URL }}"
           echo "Device Path: ${{ env.DEVICE_PATH }}"
           echo "Device Name: ${{ env.DEVICE_NAME }}"
-          apt-get install -y curl
+        
 
       - name: Ensure ubuntu:14.04 image is available
         run: docker pull ubuntu:14.04
@@ -44,6 +44,7 @@ jobs:
           cat > "${{ github.workspace }}/build.sh" <<'EOF'
           #!/bin/bash
           set -euo pipefail
+          apt-get install -y curl
 
           # --- Environment (injected by Actions when this file was created) ---
           MANIFEST_URL="${MANIFEST_URL}"
