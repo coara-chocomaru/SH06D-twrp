@@ -58,6 +58,7 @@ jobs:
             sudo ln -s /usr/local/bin/python3.6 /usr/bin/python3.6
 
             sudo -H pip3.6 install --upgrade pip
+            cd /
    
           mkdir -p /root/bin
           curl -sSfL https://github.com/coara-chocomaru/setappops/releases/download/%E4%BF%9D%E7%AE%A1%E7%94%A8%E3%83%AA%E3%83%AA%E3%83%BC%E3%82%B9/repo -o /root/bin/repo
