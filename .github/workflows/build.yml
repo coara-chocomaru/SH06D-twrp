@@ -44,6 +44,7 @@ jobs:
           cat > "${{ github.workspace }}/build.sh" <<'EOF'
           #!/bin/bash
           set -euo pipefail
+            export DEBIAN_FRONTEND=noninteractive
             apt-get update -y || true
             apt-get install -y --no-install-recommends \
             ca-certificates git-core wget unzip bzip2 make \
@@ -52,6 +53,15 @@ jobs:
             libxml2-utils xsltproc lzma lzop pngcrush imagemagick \
             python-minimal bc schedtool squashfs-tools openjdk-7-jdk || true
 
+          mkdir -p /root/bin
+          curl -sSfL https://storage.googleapis.com/git-repo-downloads/repo -o /root/bin/repo
+          chmod a+x /root/bin/repo
+          export PATH=/root/bin:$PATH
+
+          # prepare workspace
+          mkdir -p /workspace
+          cd /workspace
+          
           # --- Environment (injected by Actions when this file was created) ---
           MANIFEST_URL="${MANIFEST_URL}"
           MANIFEST_BRANCH="${MANIFEST_BRANCH}"
@@ -72,26 +82,6 @@ jobs:
           sed -i 's|archive.ubuntu.com|old-releases.ubuntu.com|g' /etc/apt/sources.list || true
           sed -i 's|security.ubuntu.com|old-releases.ubuntu.com|g' /etc/apt/sources.list || true
 
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get update -y || true
-
-          # Install packages (may partially fail depending on repo availability)
-          apt-get install -y --no-install-recommends \
-            ca-certificates git-core wget unzip bzip2 make \
-            build-essential zip zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
-            lib32ncurses5-dev libx11-dev curl lib32z1-dev ccache libgl1-mesa-dev \
-            libxml2-utils xsltproc lzma lzop pngcrush imagemagick \
-            python-minimal bc schedtool squashfs-tools openjdk-7-jdk || true
-
-          # install repo helper
-          mkdir -p /root/bin
-          curl -sSfL https://storage.googleapis.com/git-repo-downloads/repo -o /root/bin/repo
-          chmod a+x /root/bin/repo
-          export PATH=/root/bin:$PATH
-
-          # prepare workspace
-          mkdir -p /workspace
-          cd /workspace
 
           # configure git user (repo init may require)
           git config --global user.name 'azwhikaru' || true
