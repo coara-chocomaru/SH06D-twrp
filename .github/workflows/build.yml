@@ -18,134 +18,157 @@ env:
 
 jobs:
   build-14-04:
-    # 条件は元と同じにしています
     if: github.event.repository.owner.id == github.event.sender.id
     runs-on: ubuntu-latest
     timeout-minutes: 360
 
     steps:
-    - name: Checkout repository (host)
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout repository (host)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Show parameters
-      run: |
-        echo "Manifest URL: $MANIFEST_URL"
-        echo "Device Tree URL: $DEVICE_TREE_URL"
-        echo "Device Path: $DEVICE_PATH"
-        echo "Device Name: $DEVICE_NAME"
+      - name: Show parameters
+        run: |
+          echo "Manifest URL: ${{ env.MANIFEST_URL }}"
+          echo "Device Tree URL: ${{ env.DEVICE_TREE_URL }}"
+          echo "Device Path: ${{ env.DEVICE_PATH }}"
+          echo "Device Name: ${{ env.DEVICE_NAME }}"
 
-    - name: Ensure docker image is pulled (ubuntu:14.04)
-      run: |
-        docker pull ubuntu:14.04
+      - name: Ensure ubuntu:14.04 image is available
+        run: docker pull ubuntu:14.04
 
-    - name: Run full build inside ubuntu:14.04 container
-      # 実際のビルドを全てこの docker run の中で行います。
-      run: |
-        docker run --rm --privileged \
-          -v "${{ github.workspace }}":/workspace \
-          -w /workspace \
-          ubuntu:14.04 /bin/bash -lc "\
-set -euo pipefail
+      - name: Create containerized build script (host)
+        run: |
+          cat > "${{ github.workspace }}/build.sh" <<'EOF'
+          #!/bin/bash
+          set -euo pipefail
 
-# old-releases に切り替える（14.04 は EOL）
-sed -i 's|archive.ubuntu.com|old-releases.ubuntu.com|g' /etc/apt/sources.list || true
-sed -i 's|security.ubuntu.com|old-releases.ubuntu.com|g' /etc/apt/sources.list || true
+          # --- Environment (injected by Actions when this file was created) ---
+          MANIFEST_URL="${MANIFEST_URL}"
+          MANIFEST_BRANCH="${MANIFEST_BRANCH}"
+          DEVICE_TREE_URL="${DEVICE_TREE_URL}"
+          DEVICE_TREE_BRANCH="${DEVICE_TREE_BRANCH}"
+          DEVICE_PATH="${DEVICE_PATH}"
+          DEVICE_NAME="${DEVICE_NAME}"
+          MAKEFILE_NAME="${MAKEFILE_NAME}"
+          BUILD_TARGET="${BUILD_TARGET}"
+          JAVA_VERSION="${JAVA_VERSION}"
 
-apt-get update -y || true
-DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-  ca-certificates curl git-core wget unzip bzip2 make \
-  build-essential zip zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
-  lib32ncurses5-dev libx11-dev lib32z1-dev ccache libgl1-mesa-dev \
-  libxml2-utils xsltproc lzma lzop pngcrush imagemagick \
-  python-minimal bc schedtool squashfs-tools openjdk-7-jdk || true
+          echo "Starting build inside container..."
+          echo "MANIFEST_URL=${MANIFEST_URL}"
+          echo "DEVICE_PATH=${DEVICE_PATH}"
+          echo "DEVICE_NAME=${DEVICE_NAME}"
 
-# repo helper
-mkdir -p /root/bin
-curl -sSfL https://storage.googleapis.com/git-repo-downloads/repo -o /root/bin/repo
-chmod a+x /root/bin/repo
-export PATH=/root/bin:$PATH
+          # Configure apt to use old-releases for 14.04
+          sed -i 's|archive.ubuntu.com|old-releases.ubuntu.com|g' /etc/apt/sources.list || true
+          sed -i 's|security.ubuntu.com|old-releases.ubuntu.com|g' /etc/apt/sources.list || true
 
-# prepare workspace folder
-mkdir -p /workspace
-cd /workspace
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -y || true
 
-# Configure git user if needed for 'repo init' operations
-git config --global user.name 'azwhikaru' || true
-git config --global user.email 'azwhikaru+37921907@github.com' || true
+          # Install packages (may partially fail depending on repo availability)
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git-core wget unzip bzip2 make \
+            build-essential zip zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
+            lib32ncurses5-dev libx11-dev lib32z1-dev ccache libgl1-mesa-dev \
+            libxml2-utils xsltproc lzma lzop pngcrush imagemagick \
+            python-minimal bc schedtool squashfs-tools openjdk-7-jdk || true
 
-# Initialize manifest (depth=1 for speed)
-repo init --depth=1 -u \"${MANIFEST_URL}\" -b \"${MANIFEST_BRANCH}\" || (echo 'repo init failed' && exit 1)
+          # install repo helper
+          mkdir -p /root/bin
+          curl -sSfL https://storage.googleapis.com/git-repo-downloads/repo -o /root/bin/repo
+          chmod a+x /root/bin/repo
+          export PATH=/root/bin:$PATH
 
-# Repo sync (may take long)
-repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags || repo sync -j4 --no-clone-bundle || true
+          # prepare workspace
+          mkdir -p /workspace
+          cd /workspace
 
-# Inject / clone device tree into the workspace device path (safe replace)
-TARGET_DIR=\"/workspace/${DEVICE_PATH}\"
-mkdir -p \"$(dirname \"$TARGET_DIR\")\"
-if [ -d \"$TARGET_DIR\" ] && [ -n \"$(ls -A $TARGET_DIR 2>/dev/null)\" ]; then
-  mv \"$TARGET_DIR\" \"${TARGET_DIR}.bak.$(date +%s)\" || true
-fi
-git clone --depth=1 -b \"${DEVICE_TREE_BRANCH}\" \"${DEVICE_TREE_URL}\" \"$TARGET_DIR\" || true
+          # configure git user (repo init may require)
+          git config --global user.name 'azwhikaru' || true
+          git config --global user.email 'azwhikaru+37921907@github.com' || true
 
-# Optionally clone COMMON_TREE if env vars provided (left as-is)
-# mkdir -p /workspace/${COMMON_PATH} && git clone --depth=1 -b \"${DEVICE_TREE_BRANCH}\" \"${COMMON_TREE_URL}\" /workspace/${COMMON_PATH} || true
+          # init and sync manifest
+          repo init --depth=1 -u "${MANIFEST_URL}" -b "${MANIFEST_BRANCH}"
+          repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
-# Create swapfile (may require --privileged which we passed)
-if [ ! -f /swapfile ]; then
-  fallocate -l 12G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=12288
-  chmod 600 /swapfile
-  mkswap /swapfile || true
-  swapon /swapfile || true
-  echo '/swapfile none swap sw 0 0' >> /etc/fstab || true
-fi
+          # clone device tree into workspace path (safe replace)
+          TARGET_DIR="/workspace/${DEVICE_PATH}"
+          mkdir -p "$(dirname "$TARGET_DIR")"
+          if [ -d "$TARGET_DIR" ] && [ -n "$(ls -A $TARGET_DIR 2>/dev/null)" ]; then
+            mv "$TARGET_DIR" "${TARGET_DIR}.bak.$(date +%s)" || true
+          fi
+          git clone --depth=1 -b "${DEVICE_TREE_BRANCH}" "${DEVICE_TREE_URL}" "$TARGET_DIR" || true
 
-# Ensure python points to python2 if required by legacy build tools
-if [ -x /usr/bin/python2.7 ]; then
-  ln -sf /usr/bin/python2.7 /usr/bin/python || true
-fi
+          # create swapfile if possible
+          if [ ! -f /swapfile ]; then
+            fallocate -l 12G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=12288
+            chmod 600 /swapfile || true
+            mkswap /swapfile || true
+            swapon /swapfile || true
+            echo '/swapfile none swap sw 0 0' >> /etc/fstab || true
+          fi
 
-# Start Android build
-export ALLOW_MISSING_DEPENDENCIES=true
-export LC_ALL=C
+          # ensure python symlink for legacy builds
+          if [ -x /usr/bin/python2.7 ]; then
+            ln -sf /usr/bin/python2.7 /usr/bin/python || true
+          fi
 
-# source build env and run lunch/make (fail fast if missing)
-if [ -f build/envsetup.sh ]; then
-  source build/envsetup.sh
-  lunch \"${MAKEFILE_NAME}-eng\" || true
-  make clean || true
-  make -j$(nproc --all) \"${BUILD_TARGET}\" || true
-else
-  echo 'build/envsetup.sh not found in workspace. Ensure manifest and repo sync succeeded.'
-  exit 1
-fi
+          # Start Android build
+          export ALLOW_MISSING_DEPENDENCIES=true
+          export LC_ALL=C
 
-# At this point artifacts should be in out/target/product/${DEVICE_NAME}
-ls -la /workspace/out/target/product/${DEVICE_NAME} || true
+          if [ -f build/envsetup.sh ]; then
+            source build/envsetup.sh
+            lunch "${MAKEFILE_NAME}-eng" || true
+            make clean || true
+            make -j$(nproc --all) "${BUILD_TARGET}" || true
+          else
+            echo "ERROR: build/envsetup.sh not found. repo init/sync may have failed."
+            exit 1
+          fi
 
-echo 'Build finished inside ubuntu:14.04 container.'
-"
+          echo "Build finished inside container. Artifacts should be in /workspace/out/target/product/${DEVICE_NAME}"
+          ls -la /workspace/out/target/product/${DEVICE_NAME} || true
+          EOF
 
-    - name: List artifacts on host (sanity)
-      run: |
-        echo "Artifacts (host view):"
-        ls -la "${{ github.workspace }}/out/target/product/${{ env.DEVICE_NAME }}" || true
+          chmod +x "${{ github.workspace }}/build.sh"
 
-    - name: Create GitHub Release and upload artifacts (host)
-      if: always()
-      # softprops/action-gh-release uses node but we run it on the host (ここはホストで動くので問題なし)
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          out/target/product/${{ env.DEVICE_NAME }}/*.zip
-          out/target/product/${{ env.DEVICE_NAME }}/*.img
-          out/target/product/${{ env.DEVICE_NAME }}/*vendor*.img
-        name: ${{ env.DEVICE_NAME }}-android5-${{ github.run_id }}
-        tag_name: ${{ github.run_id }}
-        body: |
-          Manifest: ${{ env.MANIFEST_BRANCH }}
-          Device: ${{ env.DEVICE_NAME }}
-          Target: ${{ env.BUILD_TARGET }}
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run build inside ubuntu:14.04 container (docker)
+        run: |
+          docker run --rm --privileged \
+            -v "${{ github.workspace }}":/workspace \
+            -w /workspace \
+            -e MANIFEST_URL="${{ env.MANIFEST_URL }}" \
+            -e MANIFEST_BRANCH="${{ env.MANIFEST_BRANCH }}" \
+            -e DEVICE_TREE_URL="${{ env.DEVICE_TREE_URL }}" \
+            -e DEVICE_TREE_BRANCH="${{ env.DEVICE_TREE_BRANCH }}" \
+            -e DEVICE_PATH="${{ env.DEVICE_PATH }}" \
+            -e DEVICE_NAME="${{ env.DEVICE_NAME }}" \
+            -e MAKEFILE_NAME="${{ env.MAKEFILE_NAME }}" \
+            -e BUILD_TARGET="${{ env.BUILD_TARGET }}" \
+            -e JAVA_VERSION="${{ env.JAVA_VERSION }}" \
+            ubuntu:14.04 /bin/bash -c "/workspace/build.sh"
+
+      - name: List artifacts on host (sanity)
+        run: |
+          echo "Artifacts (host view):"
+          ls -la "${{ github.workspace }}/out/target/product/${{ env.DEVICE_NAME }}" || true
+
+      - name: Create GitHub Release and upload artifacts (host)
+        if: always()
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            out/target/product/${{ env.DEVICE_NAME }}/*.zip
+            out/target/product/${{ env.DEVICE_NAME }}/*.img
+            out/target/product/${{ env.DEVICE_NAME }}/*vendor*.img
+          name: ${{ env.DEVICE_NAME }}-android5-${{ github.run_id }}
+          tag_name: ${{ github.run_id }}
+          body: |
+            Manifest: ${{ env.MANIFEST_BRANCH }}
+            Device: ${{ env.DEVICE_NAME }}
+            Target: ${{ env.BUILD_TARGET }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
