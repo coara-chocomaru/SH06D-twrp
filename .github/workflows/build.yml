@@ -3,7 +3,7 @@ name: Recovery Build (Legacy)
 on:
   push:
     branches:
-      - main 
+      - main
 
 env:
   MANIFEST_URL: 'https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni'
@@ -19,13 +19,24 @@ env:
 jobs:
   build:
     if: github.event.repository.owner.id == github.event.sender.id
-    runs-on: ubuntu-latest 
+    runs-on: ubuntu-latest
+
     container:
       image: ubuntu:14.04
-      options: --privileged 
+      options: --privileged
+
     permissions:
       contents: write
+
+
+    timeout-minutes: 360
+
     steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
     - name: Display Run Parameters
       run: |
         echo "::group::User Environment Variables"
@@ -39,99 +50,139 @@ jobs:
         echo "Build Target: ${{ env.BUILD_TARGET }}.img"
         echo "::endgroup::"
 
-    - name: Check Out
-      uses: actions/checkout@v3
-
-    - name: Update APT Sources for Ubuntu 14.04 (EOL Handling)
+    - name: Ensure ~/bin is on PATH and install repo helper
       run: |
-        sudo sed -i 's|archive.ubuntu.com|old-releases.ubuntu.com|g' /etc/apt/sources.list
-        sudo sed -i 's|security.ubuntu.com|old-releases.ubuntu.com|g' /etc/apt/sources.list
-        sudo apt-get update -y
-        sudo apt-get install -y software-properties-common
+        mkdir -p "$HOME/bin"
+        curl -sSfL https://storage.googleapis.com/git-repo-downloads/repo -o "$HOME/bin/repo"
+        chmod a+x "$HOME/bin/repo"
+        echo "$HOME/bin" >> $GITHUB_PATH
+        # 確認
+        which repo || true
 
-    - name: Cleanup
+    - name: Update APT sources for Ubuntu 14.04 (EOL handling) and minimal tooling
       run: |
-        sudo apt-get clean
-        sudo rm -rf /var/lib/apt/lists/*
+        # ubuntu:14.04 のイメージ内で old-releases に向ける
+        sed -i 's|archive.ubuntu.com|old-releases.ubuntu.com|g' /etc/apt/sources.list || true
+        sed -i 's|security.ubuntu.com|old-releases.ubuntu.com|g' /etc/apt/sources.list || true
+        apt-get update -y
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+          ca-certificates curl gnupg git-core wget unzip sudo \
+          software-properties-common
+        apt-get clean
+      # コンテナ内で root 権限が必要な場合があるため続行
+      continue-on-error: false
 
-    - name: Prepare the Environment
+    - name: Install build dependencies (classic Android build deps)
       run: |
-        sudo apt-get update -y
-        sudo apt-get upgrade -y
-        sudo apt-get install -y git-core gnupg flex bison gperf build-essential \
-          zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
-          lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev ccache \
-          libgl1-mesa-dev libxml2-utils xsltproc unzip libbz2-dev lzma \
+        DEBIAN_FRONTEND=noninteractive apt-get update -y
+        # 必要最低限＋古い環境で入手可能なパッケージを列挙
+        apt-get install -y --no-install-recommends \
+          flex bison gperf build-essential zip zlib1g-dev \
+          gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev \
+          libx11-dev lib32z1-dev ccache libgl1-mesa-dev \
+          libxml2-utils xsltproc unzip libbz2-dev lzma \
           python bc schedtool lzop pngcrush imagemagick ncftp \
-          libncurses5-dev libsdl1.2-dev libwxgtk2.8-dev libstdc++6-4.8-dev \
-          lib32readline-gplv2-dev lib32z-dev liblz4-tool squashfs-tools \
-          openjdk-7-jdk  # Install Java 7 directly here for Android 5 compatibility
+          libncurses5-dev libsdl1.2-dev libwxgtk2.8-dev \
+          libstdc++6-4.8-dev lib32readline-gplv2-dev lib32z-dev \
+          liblz4-tool squashfs-tools openjdk-7-jdk || true
+        apt-get clean
+      # 古いリポジトリ依存で失敗することもあるため、全体で失敗させたくない場合は continue-on-error を true にできます
+      continue-on-error: false
 
-    - name: Setup SSH Keys
-      if: ${{ startsWith(env.MANIFEST_URL, 'git@github.com') }}
-      uses: webfactory/ssh-agent@v0.5.4
-      with:
-        ssh-private-key: |
-          ${{ secrets.SSH_PRIVATE_KEY }}
-
-    - name: Install repo
+    - name: Configure Git user (for repo init if needed)
       run: |
-        mkdir -p ~/bin
-        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-        chmod a+x ~/bin/repo
-        export PATH=~/bin:$PATH
-
-    - name: Initialize repo
-      run: |
-        mkdir workspace
-        cd workspace
-        echo "workspace-folder=$(pwd)" >> $GITHUB_OUTPUT
         git config --global user.name "azwhikaru"
         git config --global user.email "azwhikaru+37921907@github.com"
-        repo init --depth=1 -u ${{ env.MANIFEST_URL }} -b ${{ env.MANIFEST_BRANCH }}
-      id: pwd
 
-    - name: Repo Sync
+    - name: Create workspace directory and expose path
+      id: workspace
       run: |
-        repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
-      working-directory: workspace
+        mkdir -p workspace
+        # 絶対パスを出力して後続ステップで使えるようにする
+        echo "workspace-folder=$(pwd)/workspace" >> $GITHUB_OUTPUT
 
-    - name: Move files to workspace
+    - name: Initialize repo (manifest)
       run: |
-        mkdir -p workspace/${{ env.DEVICE_PATH }}
-        ls | grep -v workspace | xargs -I{} mv {} workspace/${{ env.DEVICE_PATH }}
+        cd ${{ steps.workspace.outputs.workspace-folder }}
+        # shallow depth=1 で manifest を取得（設定されたブランチを使用）
+        repo init --depth=1 -u "${{ env.MANIFEST_URL }}" -b "${{ env.MANIFEST_BRANCH }}"
+      working-directory: ${{ steps.workspace.outputs.workspace-folder }}
+      id: repo_init
 
-    - name: Clone common tree
-      if: |
-        env.COMMON_TREE_URL != null
-        && env.COMMON_PATH != null
+    - name: Repo sync
       run: |
-        git clone ${{ env.COMMON_TREE_URL }} -b ${{ env.DEVICE_TREE_BRANCH }} ./${{ env.COMMON_PATH }}
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        cd ${{ steps.workspace.outputs.workspace-folder }}
+        repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags || repo sync -j4 --no-clone-bundle
+      working-directory: ${{ steps.workspace.outputs.workspace-folder }}
 
-    - name: Set Swap Space
+    - name: Inject / clone device tree (if provided)
+      if: env.DEVICE_TREE_URL != ''
       run: |
-        sudo fallocate -l 12G /swapfile
-        sudo chmod 600 /swapfile
-        sudo mkswap /swapfile
-        sudo swapon /swapfile
-        echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+        set -e
+        WD="${{ steps.workspace.outputs.workspace-folder }}"
+        TARGET_DIR="${WD}/${{ env.DEVICE_PATH }}"
+        mkdir -p "$(dirname "$TARGET_DIR")"
+        # 既にファイルがある場合はバックアップ -> 安全に差し替え
+        if [ -d "$TARGET_DIR" ] && [ -n "$(ls -A $TARGET_DIR 2>/dev/null)" ]; then
+          echo "Target device path already exists, creating backup at ${TARGET_DIR}.bak"
+          mv "$TARGET_DIR" "${TARGET_DIR}.bak.$(date +%s)" || true
+        fi
+        git clone --depth=1 -b "${{ env.DEVICE_TREE_BRANCH }}" "${{ env.DEVICE_TREE_URL }}" "$TARGET_DIR"
+      working-directory: ${{ steps.workspace.outputs.workspace-folder }}
 
-    - name: Switch to Python 2 (Default in 14.04)
+    - name: Optional
+      if: env.COMMON_TREE_URL != '' && env.COMMON_PATH != ''
       run: |
-        sudo apt-get install -y python2.7
-        sudo ln -sf /usr/bin/python2.7 /usr/bin/python
+        WD="${{ steps.workspace.outputs.workspace-folder }}"
+        mkdir -p "$WD/${{ env.COMMON_PATH }}"
+        git clone --depth=1 -b "${{ env.DEVICE_TREE_BRANCH }}" "${{ env.COMMON_TREE_URL }}" "$WD/${{ env.COMMON_PATH }}"
+      working-directory: ${{ steps.workspace.outputs.workspace-folder }}
+
+    - name: Create swapfile (if not exists)
+      run: |
+        if [ ! -f /swapfile ]; then
+          fallocate -l 12G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=12288
+          chmod 600 /swapfile
+          mkswap /swapfile
+          swapon /swapfile
+          echo '/swapfile none swap sw 0 0' >> /etc/fstab
+          echo "Swapfile created and enabled."
+        else
+          echo "/swapfile already exists, skipping."
+        fi
+
+    - name: Ensure python2 exists (some legacy builds require python2)
+      run: |
+        apt-get update -y
+        apt-get install -y python2.7 || true
+        ln -sf /usr/bin/python2.7 /usr/bin/python || true
       continue-on-error: true
 
-    - name: Building Android 4
+    - name: Run build (Android)
       run: |
-        source build/envsetup.sh
+        set -e
+        WD="${{ steps.workspace.outputs.workspace-folder }}"
+        cd "$WD"
+        # 環境変数の微調整
         export ALLOW_MISSING_DEPENDENCIES=true
-        export LC_ALL=C  # Fix potential locale issues
-        lunch ${{ env.MAKEFILE_NAME }}-eng && make clean && make -j$(nproc --all) ${{ env.BUILD_TARGET }}
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        export LC_ALL=C
+        # build/envsetup.sh が成功する前提で lunch -> make
+        source build/envsetup.sh
+        lunch "${{ env.MAKEFILE_NAME }}-eng"
+        make clean
+        make -j$(nproc --all) "${{ env.BUILD_TARGET }}"
+      working-directory: ${{ steps.workspace.outputs.workspace-folder }}
 
-    - name: Upload to Release
+    - name: Collect build artifacts (if present)
+      run: |
+        WD="${{ steps.workspace.outputs.workspace-folder }}"
+        ART_DIR="${WD}/out/target/product/${{ env.DEVICE_NAME }}"
+        echo "Looking for artifacts in ${ART_DIR}"
+        ls -la "${ART_DIR}" || true
+      working-directory: ${{ steps.workspace.outputs.workspace-folder }}
+
+    - name: Upload to GitHub Release (if artifacts exist)
+      if: always()
       uses: softprops/action-gh-release@v1
       with:
         files: |
