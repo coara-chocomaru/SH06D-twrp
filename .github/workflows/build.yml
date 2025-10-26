@@ -107,10 +107,10 @@ jobs:
           aria2c -s16 -x16 -k1M "https://github.com/mochenya/device_koobee_H3/releases/download/oracle/jdk-7u80-linux-x64.tar.gz"
           tar xvzf jdk-7u80-linux-x64.tar.gz
           echo -e "
-JAVA_HOME=/usr/local/java/jdk1.7.0_80
-PATH=\$PATH:\$HOME/bin:\$JAVA_HOME/bin
-export JAVA_HOME
-export PATH" >> /etc/profile
+          JAVA_HOME=/usr/local/java/jdk1.7.0_80
+          PATH=\$PATH:\$HOME/bin:\$JAVA_HOME/bin
+          export JAVA_HOME
+          export PATH" >> /etc/profile
           . /etc/profile
       - name: Setup SSH Keys
         if: ${{ startsWith(github.event.inputs.MANIFEST_URL, 'git@github.com') }}
