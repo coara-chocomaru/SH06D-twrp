@@ -1,5 +1,6 @@
- name: Build
- on:
+name: Build
+
+on:
   workflow_dispatch:
     inputs:
       MANIFEST_URL:
@@ -40,18 +41,14 @@
         description: 'BUILD_TARGET'
         required: true
         default: 'recovery'
-        jobs:
-      build:
+
+jobs:
+  build:
     if: github.event.repository.owner.id == github.event.sender.id
-    defaults:
-      run:
-        shell: bash -l {0}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     container:
       image: ubuntu:20.04
-      options: --privileged
-    env:
-      TZ: Asia/Tokyo
+      options: --user root
     permissions:
       contents: write
     steps:
@@ -69,44 +66,22 @@
         echo "::endgroup::"
     - name: Check Out
       uses: actions/checkout@v3
-    - name: Set Timezone to Asia/Tokyo
-      run: |
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get update
-        apt-get -y install tzdata
-        ln -fs /usr/share/zoneinfo/Asia/Tokyo /etc/localtime
-        echo "Asia/Tokyo" > /etc/timezone
-        dpkg-reconfigure -f noninteractive tzdata
-    - name: Set Keyboard Layout to Japan
-      run: |
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get update
-        apt-get -y install keyboard-configuration console-setup
-        if [ -f /etc/default/keyboard ]; then
-          sed -i 's/^XKBLAYOUT=./XKBLAYOUT="jp"/' /etc/default/keyboard || true
-          sed -i 's/^XKBVARIANT=./XKBVARIANT=""/' /etc/default/keyboard || true
-        else
-          echo 'XKBMODEL="pc105"' > /etc/default/keyboard
-          echo 'XKBLAYOUT="jp"' >> /etc/default/keyboard
-          echo 'XKBVARIANT=""' >> /etc/default/keyboard
-          echo 'XKBOPTIONS=""' >> /etc/default/keyboard
-        fi
-        dpkg-reconfigure -f noninteractive keyboard-configuration
-        setupcon
     - name: Prepare the environment
       run: |
-        apt-get update
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -y
         apt-get -y upgrade
-        apt-get -y install aria2 sudo make mksh curl git unzip gperf gcc-multilib gcc-10-multilib g++-multilib g++-10-multilib libc6-dev lib32ncurses5-dev x11proto-core-dev libx11-dev tree lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc ccache lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libwxgtk3.0-gtk3-dev libxml2 lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libncurses5 python ca-certificates
-    - name: Install Java SE 6u45
+        apt-get -y remove firefox || true
+        apt-get -y autoremove || true
+        apt-get -y install --no-install-recommends gperf gcc-multilib gcc-10-multilib g++-multilib g++-10-multilib libc6-dev lib32ncurses5-dev x11proto-core-dev libx11-dev tree lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc ccache lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libwxgtk3.0-gtk3-dev libxml2 lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libncurses5 ca-certificates curl git openssh-client aria2 zip unzip python3 python3-distutils python-is-python3 apt-transport-https gnupg -y
+    - name: Install Java SE 7u80
       run: |
         mkdir -p /usr/local/java
         cd /usr/local/java
-        aria2c -s16 -x16 -k1M --header="Cookie: oraclelicense=accept-securebackup-cookie" "https://download.oracle.com/otn/java/jdk/6u45-b06/jdk-6u45-linux-x64.bin"
-        chmod +x jdk-6u45-linux-x64.bin
-        echo yes | ./jdk-6u45-linux-x64.bin
-        echo -e "\nJAVA_HOME=/usr/local/java/jdk1.6.0_45\nPATH=$PATH:$HOME/bin:$JAVA_HOME/bin\nexport JAVA_HOME\nexport PATH" >> /etc/profile
-        . /etc/profile
+        aria2c -s16 -x16 -k1M "https://github.com/mochenya/device_koobee_H3/releases/download/oracle/jdk-7u80-linux-x64.tar.gz"
+        tar xvzf jdk-7u80-linux-x64.tar.gz
+        echo -e "\nJAVA_HOME=/usr/local/java/jdk1.7.0_80\nPATH=\$PATH:\$HOME/bin:\$JAVA_HOME/bin\nexport JAVA_HOME\nexport PATH" >> /etc/profile
+        source /etc/profile
     - name: Setup SSH Keys
       if: ${{ startsWith(github.event.inputs.MANIFEST_URL, 'git@github.com') }}
       uses: webfactory/ssh-agent@v0.5.4
@@ -115,10 +90,10 @@
               ${{ secrets.SSH_PRIVATE_KEY }}
     - name: Install repo
       run: |
-        mkdir -p /root/bin
-        curl https://storage.googleapis.com/git-repo-downloads/repo > /root/bin/repo
-        chmod a+x /root/bin/repo
-        ln -sf /root/bin/repo /usr/bin/repo
+        mkdir -p ~/bin
+        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+        chmod a+x ~/bin/repo
+        ln -sf ~/bin/repo /usr/bin/repo
     - name: Initialize repo
       run: |
         mkdir workspace
@@ -143,12 +118,6 @@
       run: |
         git clone ${{ github.event.inputs.COMMON_TREE_URL }} -b ${{ github.event.inputs.DEVICE_TREE_BRANCH }} ./${{ github.event.inputs.COMMON_PATH }}
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-    - name: Clone mksh
-      run: |
-        git clone https://android.googlesource.com/platform/external/mksh external/mksh
-        cd external/mksh
-        git checkout android-4.4.4_r2.0.1
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
     - name: Check Build Tree
       uses: haya14busa/action-cond@v1
       id: buildtree
@@ -168,7 +137,7 @@
         swap-size-gb: 12
     - name: Building recovery
       run: |
-        . build/envsetup.sh
+        source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
         lunch ${{ github.event.inputs.MAKEFILE_NAME }}-eng && make clean && make ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
@@ -186,4 +155,3 @@
           Target: ${{ github.event.inputs.BUILD_TARGET }}.img
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
