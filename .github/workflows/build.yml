@@ -51,11 +51,11 @@ jobs:
           if [ -f /etc/apt/sources.list ]; then
             sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak || true
             sudo bash -c 'cat > /etc/apt/sources.list <<EOL
-deb http://old-releases.ubuntu.com/ubuntu/ trusty main restricted universe multiverse
-deb http://old-releases.ubuntu.com/ubuntu/ trusty-updates main restricted universe multiverse
-deb http://old-releases.ubuntu.com/ubuntu/ trusty-security main restricted universe multiverse
-EOL' || true
-          fi
+            deb http://old-releases.ubuntu.com/ubuntu/ trusty main restricted universe multiverse
+            deb http://old-releases.ubuntu.com/ubuntu/ trusty-updates main restricted universe multiverse
+            deb http://old-releases.ubuntu.com/ubuntu/ trusty-security main restricted universe multiverse
+           EOL' || true
+            fi
 
           sudo apt-get update || true
           NEED_PKGS=""
