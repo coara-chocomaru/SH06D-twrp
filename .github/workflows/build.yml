@@ -41,8 +41,8 @@ on:
         description: 'BUILD_TARGET'
         required: true
         default: 'recovery'
-      jobs:
-build:
+jobs:
+  build:
     if: github.event.repository.owner.id == github.event.sender.id
     defaults:
       run:
