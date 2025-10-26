@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      
 env:
   MANIFEST_URL: 'https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni'
   MANIFEST_BRANCH: 'twrp-4.4-deprecated'
