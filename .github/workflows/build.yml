@@ -121,11 +121,8 @@ jobs:
               echo "Warning: swap setup failed, continuing without swap"
             fi
             set -e
-          fi
-          if [ -x /usr/bin/python3 ]; then
-            ln -sf /usr/bin/python3 /usr/bin/python || true
-          fi
           export ALLOW_MISSING_DEPENDENCIES=true
+          export PYTHON=python2.7
           export LC_ALL=C
           if [ -f build/envsetup.sh ]; then
             set +u
