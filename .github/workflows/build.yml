@@ -107,10 +107,10 @@ jobs:
           aria2c -s16 -x16 -k1M "https://github.com/mochenya/device_koobee_H3/releases/download/oracle/jdk-7u80-linux-x64.tar.gz"
           tar xvzf jdk-7u80-linux-x64.tar.gz
           echo -e "
-          JAVA_HOME=/usr/local/java/jdk1.7.0_80
-          PATH=\$PATH:\$HOME/bin:\$JAVA_HOME/bin
-          export JAVA_HOME
-          export PATH" >> /etc/profile
+JAVA_HOME=/usr/local/java/jdk1.7.0_80
+PATH=\$PATH:\$HOME/bin:\$JAVA_HOME/bin
+export JAVA_HOME
+export PATH" >> /etc/profile
           . /etc/profile
       - name: Setup SSH Keys
         if: ${{ startsWith(github.event.inputs.MANIFEST_URL, 'git@github.com') }}
@@ -148,25 +148,28 @@ jobs:
         run: |
           git clone ${{ github.event.inputs.COMMON_TREE_URL }} -b ${{ github.event.inputs.DEVICE_TREE_BRANCH }} ./${{ github.event.inputs.COMMON_PATH }}
         working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-      - name: Ensure external/mksh and prebuilts/mksh fallback
+      - name: Ensure mksh available and external/mksh fallback
         run: |
           set -e
           WS="${{ steps.pwd.outputs.workspace-folder }}"
+          apt-get update || true
+          apt-get -y install mksh || true
+          mkdir -p "$WS/prebuilts/misc/linux-x86"
+          if [ -x "/usr/bin/mksh" ]; then
+            cp -f /usr/bin/mksh "$WS/prebuilts/misc/linux-x86/mksh" || true
+            chmod +x "$WS/prebuilts/misc/linux-x86/mksh" || true
+          fi
           if [ ! -d "$WS/external/mksh" ]; then
             git clone --depth=1 https://android.googlesource.com/platform/external/mksh "$WS/external/mksh" || git clone --depth=1 https://github.com/aosp-mirror/platform_external_mksh "$WS/external/mksh" || true
           fi
-          mkdir -p "$WS/prebuilts/misc/linux-x86"
-          MKSH_BIN="$(command -v mksh || true)"
-          if [ -n "$MKSH_BIN" ]; then
-            cp -f "$MKSH_BIN" "$WS/prebuilts/misc/linux-x86/mksh" || true
-            chmod +x "$WS/prebuilts/misc/linux-x86/mksh" || true
-          else
-            if [ ! -x "$WS/prebuilts/misc/linux-x86/mksh" ]; then
-              echo "#!/bin/sh" > "$WS/prebuilts/misc/linux-x86/mksh"
-              echo "exec /bin/sh "\$@"" >> "$WS/prebuilts/misc/linux-x86/mksh"
-              chmod +x "$WS/prebuilts/misc/linux-x86/mksh"
-            fi
+          if [ ! -x "$WS/prebuilts/misc/linux-x86/mksh" ]; then
+            echo '#!/bin/sh' > "$WS/prebuilts/misc/linux-x86/mksh"
+            echo 'exec /bin/sh "$@"' >> "$WS/prebuilts/misc/linux-x86/mksh"
+            chmod +x "$WS/prebuilts/misc/linux-x86/mksh"
           fi
+          ls -l "$WS/prebuilts/misc/linux-x86/mksh" || true
+          file "$WS/prebuilts/misc/linux-x86/mksh" || true
+          "$WS/prebuilts/misc/linux-x86/mksh" --version || true
         working-directory: ${{ steps.pwd.outputs.workspace-folder }}
       - name: Check Build Tree
         uses: haya14busa/action-cond@v1
@@ -177,19 +180,28 @@ jobs:
           if_false: omni
       - name: Sync Device Dependencies
         run: |
-          bash ${GITHUB_WORKSPACE}/scripts/convert.sh ${{ github.event.inputs.DEVICE_PATH }}/${{ steps.buildtree.outputs.value }}.dependencies
-          repo sync -j$(nproc --all)
+          bash ${GITHUB_WORKSPACE}/scripts/convert.sh ${{ github.event.inputs.DEVICE_PATH }}/${{ steps.buildtree.outputs.value }}.dependencies || true
+          repo sync -j$(nproc --all) || true
         working-directory: ${{ steps.pwd.outputs.workspace-folder }}
         continue-on-error: true
       - name: Set Swap Space
         uses: pierotofy/set-swap-space@master
         with:
           swap-size-gb: 12
+      - name: Prepare build environment variables
+        run: |
+          NUM_JOBS=$(nproc)
+          echo "NUM_JOBS=$NUM_JOBS" >> $GITHUB_ENV
+          echo "MAKEFLAGS=-j$NUM_JOBS" >> $GITHUB_ENV
+          echo "JOBS=$NUM_JOBS" >> $GITHUB_ENV
       - name: Building recovery
         run: |
+          set -e
           . build/envsetup.sh
           export ALLOW_MISSING_DEPENDENCIES=true
-          lunch ${{ github.event.inputs.MAKEFILE_NAME }}-eng && make clean && make ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
+          lunch ${{ github.event.inputs.MAKEFILE_NAME }}-eng
+          make clean
+          make ${{ github.event.inputs.BUILD_TARGET }}image
         working-directory: ${{ steps.pwd.outputs.workspace-folder }}
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
