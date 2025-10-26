@@ -129,6 +129,7 @@ jobs:
           export LC_ALL=C
           if [ -f build/envsetup.sh ]; then
             set +u
+            export PYTHON=python2.7
             source build/envsetup.sh
             set -u
             lunch "${MAKEFILE_NAME}-eng" || true
