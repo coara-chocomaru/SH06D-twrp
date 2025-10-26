@@ -143,9 +143,11 @@ jobs:
       run: |
         git clone ${{ github.event.inputs.COMMON_TREE_URL }} -b ${{ github.event.inputs.DEVICE_TREE_BRANCH }} ./${{ github.event.inputs.COMMON_PATH }}
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-    - name: Clone system core
+    - name: Clone mksh
       run: |
-        git clone https://github.com/aosp-mirror/platform_system_core.git -b kitkat-release ./system/core --depth=1
+        git clone https://android.googlesource.com/platform/external/mksh external/mksh
+        cd external/mksh
+        git checkout android-4.4.4_r2.0.1
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
     - name: Check Build Tree
       uses: haya14busa/action-cond@v1
