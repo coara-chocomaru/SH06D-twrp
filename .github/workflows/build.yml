@@ -131,7 +131,8 @@ jobs:
       id: pwd
     - name: Repo Sync
       run: |
-        repo sync -j$(nproc --all) --force-sync
+        repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --prune || \
+        (sleep 10 && repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --prune)
       working-directory: workspace
     - name: Clone device tree
       run: |
@@ -154,9 +155,18 @@ jobs:
     - name: Sync Device Dependencies
       run: |
         bash ${GITHUB_WORKSPACE}/scripts/convert.sh ${{ github.event.inputs.DEVICE_PATH }}/${{ steps.buildtree.outputs.value }}.dependencies
-        repo sync -j$(nproc --all)
+        repo sync -j$(nproc --all) --force-sync
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
       continue-on-error: true
+    - name: Verify mksh presence
+      run: |
+        if [ ! -d "external/mksh" ]; then
+          echo "mksh not found, attempting to clone explicitly"
+          git clone https://github.com/MirBSD/mksh.git external/mksh
+        else
+          echo "mksh found at external/mksh"
+        fi
+      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
     - name: Set Swap Space
       uses: pierotofy/set-swap-space@master
       with:
