@@ -1,5 +1,4 @@
 name: Build
-
 on:
   workflow_dispatch:
     inputs:
@@ -41,9 +40,8 @@ on:
         description: 'BUILD_TARGET'
         required: true
         default: 'recovery'
-
-jobs:
-  build:
+      jobs:
+build:
     if: github.event.repository.owner.id == github.event.sender.id
     defaults:
       run:
@@ -85,8 +83,8 @@ jobs:
         apt-get update
         apt-get -y install keyboard-configuration console-setup
         if [ -f /etc/default/keyboard ]; then
-          sed -i 's/^XKBLAYOUT=.*/XKBLAYOUT="jp"/' /etc/default/keyboard || true
-          sed -i 's/^XKBVARIANT=.*/XKBVARIANT=""/' /etc/default/keyboard || true
+          sed -i 's/^XKBLAYOUT=./XKBLAYOUT="jp"/' /etc/default/keyboard || true
+          sed -i 's/^XKBVARIANT=./XKBVARIANT=""/' /etc/default/keyboard || true
         else
           echo 'XKBMODEL="pc105"' > /etc/default/keyboard
           echo 'XKBLAYOUT="jp"' >> /etc/default/keyboard
@@ -106,7 +104,7 @@ jobs:
         cd /usr/local/java
         aria2c -s16 -x16 -k1M "https://github.com/mochenya/device_koobee_H3/releases/download/oracle/jdk-7u80-linux-x64.tar.gz"
         tar xvzf jdk-7u80-linux-x64.tar.gz
-        echo -e "\nJAVA_HOME=/usr/local/java/jdk1.7.0_80\nPATH=\$PATH:\$HOME/bin:\$JAVA_HOME/bin\nexport JAVA_HOME\nexport PATH" >> /etc/profile
+        echo -e "\nJAVA_HOME=/usr/local/java/jdk1.7.0_80\nPATH=$PATH:$HOME/bin:$JAVA_HOME/bin\nexport JAVA_HOME\nexport PATH" >> /etc/profile
         . /etc/profile
     - name: Setup SSH Keys
       if: ${{ startsWith(github.event.inputs.MANIFEST_URL, 'git@github.com') }}
@@ -129,10 +127,19 @@ jobs:
         git config --global user.email "b170420nc@gmail.com"
         repo init --depth=1 -u ${{ github.event.inputs.MANIFEST_URL }} -b ${{ github.event.inputs.MANIFEST_BRANCH }}
       id: pwd
+    - name: Add mksh to local manifest
+      run: |
+        mkdir -p ${{ steps.pwd.outputs.workspace-folder }}/.repo/local_manifests
+        cat > ${{ steps.pwd.outputs.workspace-folder }}/.repo/local_manifests/mksh.xml << 'EOF'
+        <?xml version="1.0" encoding="UTF-8"?>
+        <manifest>
+        <remote name="aosp" fetch="https://android.googlesource.com" />
+        <project path="external/mksh" name="platform/external/mksh" remote="aosp" revision="android-4.0.4_r1" />
+        </manifest>
+        EOF
     - name: Repo Sync
       run: |
-        repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --prune || \
-        (sleep 10 && repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --prune)
+        repo sync -j$(nproc --all) --force-sync
       working-directory: workspace
     - name: Clone device tree
       run: |
@@ -155,18 +162,9 @@ jobs:
     - name: Sync Device Dependencies
       run: |
         bash ${GITHUB_WORKSPACE}/scripts/convert.sh ${{ github.event.inputs.DEVICE_PATH }}/${{ steps.buildtree.outputs.value }}.dependencies
-        repo sync -j$(nproc --all) --force-sync
+        repo sync -j$(nproc --all)
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
       continue-on-error: true
-    - name: Verify mksh presence
-      run: |
-        if [ ! -d "external/mksh" ]; then
-          echo "mksh not found, attempting to clone explicitly"
-          git clone https://github.com/MirBSD/mksh.git external/mksh
-        else
-          echo "mksh found at external/mksh"
-        fi
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
     - name: Set Swap Space
       uses: pierotofy/set-swap-space@master
       with:
