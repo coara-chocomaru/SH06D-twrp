@@ -133,7 +133,7 @@ jobs:
             source build/envsetup.sh
             set -u
             lunch "${MAKEFILE_NAME}-eng" || true
-            export PYTHON=python2.7
+            export PYTHON=python3
             make clean || true
             make -j$(nproc --all) "${BUILD_TARGET}" || true
           else
