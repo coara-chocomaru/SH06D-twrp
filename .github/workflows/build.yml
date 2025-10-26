@@ -1,4 +1,4 @@
-name: Recovery Build (Legacy) - ubuntu:14.04 docker (robust)
+name: Recovery Build (Legacy) - ubuntu:14.04 docker
 
 on:
   push:
@@ -15,7 +15,6 @@ env:
   MAKEFILE_NAME: 'omni_sh06d'
   BUILD_TARGET: 'recovery'
   JAVA_VERSION: '7'
-  TRUSTY_IMAGE: 'geerlingguy/docker-ubuntu1404-ansible:latest'
 
 jobs:
   build-14-04:
@@ -35,11 +34,9 @@ jobs:
           echo "Device Tree URL: ${{ env.DEVICE_TREE_URL }}"
           echo "Device Path: ${{ env.DEVICE_PATH }}"
           echo "Device Name: ${{ env.DEVICE_NAME }}"
-          echo "Using TRUSTY_IMAGE=${{ env.TRUSTY_IMAGE }}"
 
-      - name: Pull trusted Trusty image
-        run: |
-          docker pull "${{ env.TRUSTY_IMAGE }}" || true
+      - name: Ensure ubuntu:14.04 image is available
+        run: docker pull ubuntu:14.04
 
       - name: Create containerized build script (host)
         run: |
@@ -49,36 +46,35 @@ jobs:
           export DEBIAN_FRONTEND=noninteractive
 
           if [ -f /etc/apt/sources.list ]; then
-            sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak || true
-            sudo bash -c 'cat > /etc/apt/sources.list <<EOL
+            cp /etc/apt/sources.list /etc/apt/sources.list.bak || true
+            cat > /etc/apt/sources.list <<EOL
             deb http://old-releases.ubuntu.com/ubuntu/ trusty main restricted universe multiverse
             deb http://old-releases.ubuntu.com/ubuntu/ trusty-updates main restricted universe multiverse
             deb http://old-releases.ubuntu.com/ubuntu/ trusty-security main restricted universe multiverse
-           EOL' || true
+            EOL
             fi
 
-          sudo apt-get update || true
-          NEED_PKGS=""
-          for pkg in curl git wget ca-certificates python2.7 python-is-python2 openjdk-7-jdk unzip bzip2 lzop fallocate util-linux; do
-            if ! command -v "$pkg" >/dev/null 2>&1 && ! dpkg -s "$pkg" >/dev/null 2>&1; then
-              NEED_PKGS="$NEED_PKGS $pkg"
-            fi
-          done
-          if [ -n "$NEED_PKGS" ]; then
-            sudo apt-get install -y --no-install-recommends $NEED_PKGS || true
-          fi
+            apt-get update
+            sudo apt -y upgrade
+            sudo apt -y install gperf gcc-multilib g++-multilib libc6-dev wget curl tar lib32ncurses5-dev x11proto-core-dev libx11-dev tree lib32z1-dev git libgl1-mesa-dev libxml2-utils xsltproc bc ccache lib32readline-gplv2-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libwxgtk2.8-dev libxml2 lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static libreadline-gplv2-dev libstdc++-4.8-dev libreadline-gplv2-dev libncursesw5-dev libssl-dev libsqlite3-dev tk-dev libgdbm-dev libc6-dev libbz2-dev
+            cd ~
+            sudo wget https://www.python.org/ftp/python/3.6.4/Python-3.6.4.tgz
+            sudo tar xzf Python-3.6.4.tgz
 
+            cd Python-3.6.4
+            sudo ./configure --enable-optimizations
+            sudo make altinstall
+            sudo ln -s /usr/local/bin/python3.6 /usr/bin/python3.6
+
+            sudo -H pip3.6 install --upgrade pip
+            cd /
+   
           mkdir -p /root/bin
-          if [ ! -x /root/bin/repo ]; then
-            if command -v curl >/dev/null 2>&1; then
-              curl -sSfL https://storage.googleapis.com/git-repo-downloads/repo -o /root/bin/repo || true
-            elif command -v wget >/dev/null 2>&1; then
-              wget -qO /root/bin/repo https://storage.googleapis.com/git-repo-downloads/repo || true
-            fi
-            chmod a+x /root/bin/repo || true
-          fi
+          curl -sSfL https://github.com/coara-chocomaru/setappops/releases/download/%E4%BF%9D%E7%AE%A1%E7%94%A8%E3%83%AA%E3%83%AA%E3%83%BC%E3%82%B9/repo -o /root/bin/repo
+          chmod a+x /root/bin/repo
           export PATH=/root/bin:$PATH
-
+          ln -sf /usr/local/python3.6 /usr/bin/python
+          # prepare workspace
           mkdir -p /workspace
           cd /workspace
 
@@ -92,15 +88,15 @@ jobs:
           BUILD_TARGET="${BUILD_TARGET}"
           JAVA_VERSION="${JAVA_VERSION}"
 
-          if [ -x /usr/bin/python2 ]; then
-            ln -sf /usr/bin/python2 /usr/bin/python || true
+          if [ -x /usr/bin/python3 ]; then
+            ln -sf /usr/bin/python3 /usr/bin/python || true
           fi
 
           export JAVA_HOME=/usr/lib/jvm/java-7-openjdk-amd64 || true
           export PATH="$JAVA_HOME/bin:$PATH"
 
-          python /root/bin/repo init --depth=1 -u "${MANIFEST_URL}" -b "${MANIFEST_BRANCH}" || true
-          python /root/bin/repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags || true
+          repo init --depth=1 -u "${MANIFEST_URL}" -b "${MANIFEST_BRANCH}" || true
+          repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags || true
 
           TARGET_DIR="/workspace/${DEVICE_PATH}"
           mkdir -p "$(dirname "$TARGET_DIR")"
@@ -157,7 +153,7 @@ jobs:
               fi
             done
             if [ "$LUNCH_OK" -ne 1 ]; then
-              echo "Warning: lunch combo not found. Continuing."
+              echo "Warning: lunch combo not found. Continuing, but build may fail."
             fi
             make clean || true
             make -j$(nproc --all) "${BUILD_TARGET}" || true
@@ -171,7 +167,7 @@ jobs:
           EOF
           chmod +x "${{ github.workspace }}/build.sh"
 
-      - name: Run build inside trusted ubuntu:14.04 container
+      - name: Run build inside ubuntu:14.04 container (docker)
         run: |
           docker run --rm --privileged \
             -v "${{ github.workspace }}":/workspace \
@@ -185,10 +181,11 @@ jobs:
             -e MAKEFILE_NAME="${{ env.MAKEFILE_NAME }}" \
             -e BUILD_TARGET="${{ env.BUILD_TARGET }}" \
             -e JAVA_VERSION="${{ env.JAVA_VERSION }}" \
-            "${{ env.TRUSTY_IMAGE }}" /bin/bash -c "/workspace/build.sh"
+            ubuntu:14.04 /bin/bash -c "/workspace/build.sh"
 
-      - name: List artifacts on host
+      - name: List artifacts on host (sanity)
         run: |
+          echo "Artifacts (host view):"
           ls -la "${{ github.workspace }}/out/target/product/${{ env.DEVICE_NAME }}" || true
 
       - name: Create GitHub Release and upload artifacts (host)
