@@ -45,7 +45,7 @@ on:
 jobs:
   build:
     if: github.event.repository.owner.id == github.event.sender.id
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     container:
       image: ubuntu:20.04
       options: --privileged
@@ -76,6 +76,22 @@ jobs:
         ln -fs /usr/share/zoneinfo/Asia/Tokyo /etc/localtime
         echo "Asia/Tokyo" > /etc/timezone
         dpkg-reconfigure -f noninteractive tzdata
+    - name: Set Keyboard Layout to Japan
+      run: |
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update
+        apt-get -y install keyboard-configuration console-setup
+        if [ -f /etc/default/keyboard ]; then
+          sed -i 's/^XKBLAYOUT=.*/XKBLAYOUT="jp"/' /etc/default/keyboard || true
+          sed -i 's/^XKBVARIANT=.*/XKBVARIANT=""/' /etc/default/keyboard || true
+        else
+          echo 'XKBMODEL="pc105"' > /etc/default/keyboard
+          echo 'XKBLAYOUT="jp"' >> /etc/default/keyboard
+          echo 'XKBVARIANT=""' >> /etc/default/keyboard
+          echo 'XKBOPTIONS=""' >> /etc/default/keyboard
+        fi
+        dpkg-reconfigure -f noninteractive keyboard-configuration
+        setupcon
     - name: Prepare the environment
       run: |
         apt-get update
