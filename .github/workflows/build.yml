@@ -148,28 +148,26 @@ jobs:
         run: |
           git clone ${{ github.event.inputs.COMMON_TREE_URL }} -b ${{ github.event.inputs.DEVICE_TREE_BRANCH }} ./${{ github.event.inputs.COMMON_PATH }}
         working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-      - name: Ensure mksh available and external/mksh fallback
+      - name: Ensure mksh available (wrapper + prebuilts)
         run: |
           set -e
           WS="${{ steps.pwd.outputs.workspace-folder }}"
           apt-get update || true
           apt-get -y install mksh || true
           mkdir -p "$WS/prebuilts/misc/linux-x86"
-          if [ -x "/usr/bin/mksh" ]; then
-            cp -f /usr/bin/mksh "$WS/prebuilts/misc/linux-x86/mksh" || true
-            chmod +x "$WS/prebuilts/misc/linux-x86/mksh" || true
-          fi
-          if [ ! -d "$WS/external/mksh" ]; then
-            git clone --depth=1 https://android.googlesource.com/platform/external/mksh "$WS/external/mksh" || git clone --depth=1 https://github.com/aosp-mirror/platform_external_mksh "$WS/external/mksh" || true
-          fi
-          if [ ! -x "$WS/prebuilts/misc/linux-x86/mksh" ]; then
-            echo '#!/bin/sh' > "$WS/prebuilts/misc/linux-x86/mksh"
-            echo 'exec /bin/sh "$@"' >> "$WS/prebuilts/misc/linux-x86/mksh"
-            chmod +x "$WS/prebuilts/misc/linux-x86/mksh"
-          fi
+          cat > "$WS/prebuilts/misc/linux-x86/mksh" <<'EOF'
+          #!/bin/sh
+          exec /usr/bin/mksh "$@"
+          EOF
+          chmod +x "$WS/prebuilts/misc/linux-x86/mksh"
+          cat > "$WS/mksh" <<'EOF'
+          #!/bin/sh
+          exec /usr/bin/mksh "$@"
+          EOF
+          chmod +x "$WS/mksh"
+          echo "Created wrappers:"
           ls -l "$WS/prebuilts/misc/linux-x86/mksh" || true
-          file "$WS/prebuilts/misc/linux-x86/mksh" || true
-          "$WS/prebuilts/misc/linux-x86/mksh" --version || true
+          ls -l "$WS/mksh" || true
         working-directory: ${{ steps.pwd.outputs.workspace-folder }}
       - name: Check Build Tree
         uses: haya14busa/action-cond@v1
@@ -188,15 +186,17 @@ jobs:
         uses: pierotofy/set-swap-space@master
         with:
           swap-size-gb: 12
-      - name: Prepare build environment variables
+      - name: Prepare build environment variables and PATH
         run: |
           NUM_JOBS=$(nproc)
           echo "NUM_JOBS=$NUM_JOBS" >> $GITHUB_ENV
           echo "MAKEFLAGS=-j$NUM_JOBS" >> $GITHUB_ENV
           echo "JOBS=$NUM_JOBS" >> $GITHUB_ENV
+          echo "PATH=${{ steps.pwd.outputs.workspace-folder }}:\$PATH" >> $GITHUB_ENV
       - name: Building recovery
         run: |
           set -e
+          export PATH="${{ steps.pwd.outputs.workspace-folder }}:$PATH"
           . build/envsetup.sh
           export ALLOW_MISSING_DEPENDENCIES=true
           lunch ${{ github.event.inputs.MAKEFILE_NAME }}-eng
