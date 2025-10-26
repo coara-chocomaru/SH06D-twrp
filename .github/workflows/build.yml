@@ -47,16 +47,24 @@ jobs:
     if: github.event.repository.owner.id == github.event.sender.id
     defaults:
       run:
-        shell: bash -l {0}
+        shell: /bin/bash -l {0}
     runs-on: ubuntu-latest
     container:
-      image: ubuntu:20.04
+      image: ghcr.io/catthehacker/ubuntu:full-20.04
       options: --privileged
     env:
       TZ: Asia/Tokyo
     permissions:
       contents: write
     steps:
+      - name: Verify shell and environment
+        run: |
+          echo "which bash: $(which bash || true)"
+          echo "bash --version:"
+          bash --version || true
+          echo "which sh: $(which sh || true)"
+          echo "sh --version:"
+          sh --version || true
       - name: Display Run Parameters
         run: |
           echo "::group::User Environment Variables"
@@ -99,7 +107,7 @@ jobs:
         run: |
           apt-get update
           apt-get -y upgrade
-          apt-get -y install aria2 sudo make mksh curl git unzip gperf gcc-multilib gcc-10-multilib g++-multilib g++-10-multilib libc6-dev lib32ncurses5-dev x11proto-core-dev libx11-dev tree lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc ccache lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libwxgtk3.0-gtk3-dev libxml2 lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libncurses5 python ca-certificates pkg-config
+          apt-get -y install aria2 sudo make mksh curl git unzip gperf gcc-multilib gcc-10-multilib g++-multilib g++-10-multilib libc6-dev lib32ncurses5-dev x11proto-core-dev libx11-dev tree lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc ccache lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libwxgtk3.0-gtk3-dev libxml2 lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libncurses5 python3 ca-certificates pkg-config
       - name: Install Java SE 7u80
         run: |
           mkdir -p /usr/local/java
@@ -161,7 +169,7 @@ jobs:
           EOF
           chmod +x "$WS/prebuilts/misc/linux-x86/mksh"
           cat > "$WS/mksh" <<'EOF'
-          #!/bin/sh
+          #!/bin/sh 
           exec /usr/bin/mksh "$@"
           EOF
           chmod +x "$WS/mksh"
