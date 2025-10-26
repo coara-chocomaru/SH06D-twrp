@@ -1,4 +1,6 @@
-name: Buildon:
+name: Build
+
+on:
   workflow_dispatch:
     inputs:
       MANIFEST_URL:
