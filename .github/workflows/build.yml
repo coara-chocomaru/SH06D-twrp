@@ -49,9 +49,6 @@ jobs:
       run:
         shell: /bin/bash -l {0}
     runs-on: ubuntu-latest
-    container:
-      image: ubuntu:20.04
-      options: --privileged
     env:
       TZ: Asia/Tokyo
     permissions:
@@ -81,45 +78,39 @@ jobs:
         uses: actions/checkout@v3
       - name: Set Timezone to Asia/Tokyo
         run: |
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get update
-          apt-get -y install tzdata
-          ln -fs /usr/share/zoneinfo/Asia/Tokyo /etc/localtime
-          echo "Asia/Tokyo" > /etc/timezone
-          dpkg-reconfigure -f noninteractive tzdata
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -y install tzdata
+          sudo ln -fs /usr/share/zoneinfo/Asia/Tokyo /etc/localtime
+          echo "Asia/Tokyo" | sudo tee /etc/timezone
+          sudo dpkg-reconfigure -f noninteractive tzdata
       - name: Set Keyboard Layout to Japan
         run: |
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get update
-          apt-get -y install keyboard-configuration console-setup
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -y install keyboard-configuration console-setup
           if [ -f /etc/default/keyboard ]; then
-            sed -i 's/^XKBLAYOUT=.*/XKBLAYOUT="jp"/' /etc/default/keyboard || true
-            sed -i 's/^XKBVARIANT=.*/XKBVARIANT=""/' /etc/default/keyboard || true
+            sudo sed -i 's/^XKBLAYOUT=.*/XKBLAYOUT="jp"/' /etc/default/keyboard || true
+            sudo sed -i 's/^XKBVARIANT=.*/XKBVARIANT=""/' /etc/default/keyboard || true
           else
-            echo 'XKBMODEL="pc105"' > /etc/default/keyboard
-            echo 'XKBLAYOUT="jp"' >> /etc/default/keyboard
-            echo 'XKBVARIANT=""' >> /etc/default/keyboard
-            echo 'XKBOPTIONS=""' >> /etc/default/keyboard
+            echo 'XKBMODEL="pc105"' | sudo tee /etc/default/keyboard
+            echo 'XKBLAYOUT="jp"' | sudo tee -a /etc/default/keyboard
+            echo 'XKBVARIANT=""' | sudo tee -a /etc/default/keyboard
+            echo 'XKBOPTIONS=""' | sudo tee -a /etc/default/keyboard
           fi
-          dpkg-reconfigure -f noninteractive keyboard-configuration
-          setupcon
+          sudo dpkg-reconfigure -f noninteractive keyboard-configuration
+          sudo setupcon
       - name: Prepare the environment
         run: |
-          apt-get update
-          apt-get -y upgrade
-          apt-get -y install aria2 uname grep sudo make mksh curl git unzip gperf gcc-multilib gcc-10-multilib g++-multilib g++-10-multilib libc6-dev lib32ncurses5-dev x11proto-core-dev libx11-dev tree lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc ccache lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libwxgtk3.0-gtk3-dev libxml2 lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libncurses5 python3 ca-certificates pkg-config
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -y upgrade
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -y install aria2 grep sudo make mksh curl git unzip gperf gcc-multilib gcc-10-multilib g++-multilib g++-10-multilib libc6-dev lib32ncurses5-dev x11proto-core-dev libx11-dev tree lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc ccache lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libwxgtk3.0-gtk3-dev libxml2 lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libncurses5 python3 ca-certificates pkg-config
       - name: Install Java SE 7u80
         run: |
-          mkdir -p /usr/local/java
+          sudo mkdir -p /usr/local/java
           cd /usr/local/java
           aria2c -s16 -x16 -k1M "https://github.com/mochenya/device_koobee_H3/releases/download/oracle/jdk-7u80-linux-x64.tar.gz"
-          tar xvzf jdk-7u80-linux-x64.tar.gz
-          echo -e "
-          JAVA_HOME=/usr/local/java/jdk1.7.0_80
-          PATH=\$PATH:\$HOME/bin:\$JAVA_HOME/bin
-          export JAVA_HOME
-          export PATH" >> /etc/profile
-          . /etc/profile
+          sudo tar xvzf jdk-7u80-linux-x64.tar.gz -C /usr/local/java
+          echo "JAVA_HOME=/usr/local/java/jdk1.7.0_80" >> $GITHUB_ENV
+          echo "PATH=/usr/local/java/jdk1.7.0_80/bin:$PATH" >> $GITHUB_ENV
       - name: Setup SSH Keys
         if: ${{ startsWith(github.event.inputs.MANIFEST_URL, 'git@github.com') }}
         uses: webfactory/ssh-agent@v0.5.4
@@ -128,14 +119,14 @@ jobs:
             ${{ secrets.SSH_PRIVATE_KEY }}
       - name: Install repo
         run: |
-          mkdir -p /root/bin
-          curl https://storage.googleapis.com/git-repo-downloads/repo > /root/bin/repo
-          chmod a+x /root/bin/repo
-          ln -sf /root/bin/repo /usr/bin/repo
+          sudo mkdir -p /usr/local/bin
+          curl https://storage.googleapis.com/git-repo-downloads/repo > /tmp/repo
+          sudo mv /tmp/repo /usr/local/bin/repo
+          sudo chmod a+x /usr/local/bin/repo
       - name: Initialize repo
         id: pwd
         run: |
-          mkdir workspace
+          mkdir -p workspace
           cd workspace
           echo "workspace-folder=$(pwd)" >> $GITHUB_OUTPUT
           git config --global user.name "Nico170420"
@@ -143,7 +134,7 @@ jobs:
           repo init --depth=1 -u ${{ github.event.inputs.MANIFEST_URL }} -b ${{ github.event.inputs.MANIFEST_BRANCH }}
       - name: Repo Sync
         run: |
-          repo sync -j$(nproc --all) --force-sync
+          repo sync -j$(nproc) --force-sync
         working-directory: workspace
       - name: Clone device tree
         run: |
@@ -160,8 +151,8 @@ jobs:
         run: |
           set -e
           WS="${{ steps.pwd.outputs.workspace-folder }}"
-          apt-get update || true
-          apt-get -y install mksh || true
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update || true
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -y install mksh || true
           mkdir -p "$WS/prebuilts/misc/linux-x86"
           cat > "$WS/prebuilts/misc/linux-x86/mksh" <<'EOF'
           #!/bin/sh
@@ -187,7 +178,7 @@ jobs:
       - name: Sync Device Dependencies
         run: |
           bash ${GITHUB_WORKSPACE}/scripts/convert.sh ${{ github.event.inputs.DEVICE_PATH }}/${{ steps.buildtree.outputs.value }}.dependencies || true
-          repo sync -j$(nproc --all) || true
+          repo sync -j$(nproc) || true
         working-directory: ${{ steps.pwd.outputs.workspace-folder }}
         continue-on-error: true
       - name: Set Swap Space
@@ -200,7 +191,7 @@ jobs:
           echo "NUM_JOBS=$NUM_JOBS" >> $GITHUB_ENV
           echo "MAKEFLAGS=-j$NUM_JOBS" >> $GITHUB_ENV
           echo "JOBS=$NUM_JOBS" >> $GITHUB_ENV
-          echo "PATH=${{ steps.pwd.outputs.workspace-folder }}:\$PATH" >> $GITHUB_ENV
+          echo "PATH=${{ steps.pwd.outputs.workspace-folder }}:$PATH" >> $GITHUB_ENV
       - name: Building recovery
         run: |
           set -e
