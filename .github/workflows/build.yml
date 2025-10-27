@@ -46,6 +46,9 @@ on:
 
 jobs:
   build:
+    defaults:
+      run:
+        shell: bash -l {0}
     if: github.event.repository.owner.id == github.event.sender.id
     runs-on: ubuntu-22.04
     container:
