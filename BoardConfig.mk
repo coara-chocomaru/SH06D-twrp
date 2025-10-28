@@ -10,6 +10,10 @@ BOARD_VENDOR := sharp
 BOARD_DEVICE := sh06d
 
 # For building with minimal manifest
+TARGET_BUILD_33BIT := true
+TARGET_BOARD_SUFFIX := _32
+TARGET_SUPPORTS_32_BIT_APPS := true
+TARGET_IS_32_BIT := true
 ALLOW_MISSING_DEPENDENCIES := true
 TARGET_ARCH := arm
 TARGET_ARCH_VARIANT := armv7-a-neon
