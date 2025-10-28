@@ -6,7 +6,7 @@
 #
 
 DEVICE_PATH := device/sharp/sh06d
-BOARD_VENDOR := shrp
+BOARD_VENDOR := sharp
 BOARD_DEVICE := sh06d
 
 # For building with minimal manifest
