@@ -10,7 +10,7 @@ env:
   MANIFEST_BRANCH: 'twrp-5.1'
   DEVICE_TREE_URL: 'https://github.com/coara-chocomaru/SH06D-twrp'
   DEVICE_TREE_BRANCH: 'main'
-  DEVICE_PATH: 'device/shrp/sh06d'
+  DEVICE_PATH: 'device/sharp/sh06d'
   DEVICE_NAME: 'sh06d'
   MAKEFILE_NAME: 'omni_sh06d'
   BUILD_TARGET: 'recovery'
