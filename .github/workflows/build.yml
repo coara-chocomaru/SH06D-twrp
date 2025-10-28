@@ -74,9 +74,18 @@ jobs:
     - name: Cleanup
       uses: rokibhasansagar/slimhub_actions@main
 
-    - name: Prepare the environment (install packages)
+    - name: Prepare the environment (install packages + CA certs)
       run: |
+        set -euo pipefail
         apt-get update
+
+        # install CA certs first so curl/git work correctly
+        apt-get install -y --no-install-recommends ca-certificates apt-transport-https gnupg
+
+        # update CA bundle
+        update-ca-certificates || true
+
+        # main dev packages (keep minimal; add/remove per build logs)
         DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             git-core curl unzip python2 python3 python3-distutils wget rsync \
             build-essential bison flex libncurses5-dev lib32z1 \
@@ -85,8 +94,9 @@ jobs:
             libsdl1.2-dev libxml2 xsltproc lzop pngcrush schedtool \
             squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static \
             libstdc++-10-dev tar file
-        # create python symlink for legacy scripts expecting `python`
-        if [ ! -f /usr/bin/python ]; then
+
+        # ensure `python` points to python2 for legacy tools (if available)
+        if command -v python2 >/dev/null 2>&1 && [ ! -e /usr/bin/python ]; then
           ln -sf /usr/bin/python2 /usr/bin/python || true
         fi
 
@@ -119,7 +129,6 @@ jobs:
         echo "workspace-folder=$(pwd)" >> $GITHUB_OUTPUT
         git config --global user.name "github-actions[bot]"
         git config --global user.email "actions@github.com"
-        # Try normal init; if old manifest needs repo-1, change as required
         repo init --depth=1 -u "${{ github.event.inputs.MANIFEST_URL }}" -b "${{ github.event.inputs.MANIFEST_BRANCH }}" || \
           repo init --repo-branch=repo-1 -u "${{ github.event.inputs.MANIFEST_URL }}" -b "${{ github.event.inputs.MANIFEST_BRANCH }}"
 
@@ -127,7 +136,6 @@ jobs:
       run: |
         cd "${{ steps.pwd.outputs.workspace-folder }}"
         repo sync -c --no-clone-bundle --depth=1 -j$(nproc) || repo sync -j2
-      # working-directory handled inside script
 
     - name: Clone device tree
       run: |
@@ -153,20 +161,15 @@ jobs:
 
     - name: Switch to Python2 (if needed)
       run: |
-        # ensure /usr/bin/python points to python2 for legacy tools
         if command -v python2 >/dev/null 2>&1; then
           ln -sf /usr/bin/python2 /usr/bin/python || true
         fi
-
-    # NOTE: swap allocation removed — inside a container on GitHub-hosted runners you usually cannot enable host swap.
-    # If you need large memory, consider using a self-hosted runner or reduce -j parallelism.
 
     - name: Building recovery
       run: |
         cd "${{ steps.pwd.outputs.workspace-folder }}"
         source build/envsetup.sh || true
         export ALLOW_MISSING_DEPENDENCIES=true
-        # If device makefile/lunch info supplied, attempt lunch
         if [ -n "${{ github.event.inputs.MAKEFILE_NAME }}" ] && [ -n "${{ github.event.inputs.DEVICE_NAME }}" ]; then
           lunch "${{ github.event.inputs.MAKEFILE_NAME }}-${{ github.event.inputs.DEVICE_NAME }}-eng" || true
           make clean || true
