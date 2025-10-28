@@ -23,18 +23,6 @@ on:
         description: 'DEVICE_PATH'
         required: true
         default: 'device/shrp/sh06d'
-      COMMON_TREE_URL:
-        description: 'COMMON_TREE_URL (if no common tree, leave blank)'
-        required: false
-        default: ''
-      COMMON_PATH:
-        description: 'COMMON_PATH (if no common tree, leave blank)'
-        required: false
-        default: ''
-      COMMON_TREE_BRANCH:
-        description: 'COMMON_TREE_BRANCH (if cloning a common tree)'
-        required: false
-        default: 'main'
       DEVICE_NAME:
         description: 'DEVICE_NAME'
         required: true
