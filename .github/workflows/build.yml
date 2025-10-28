@@ -1,163 +1,171 @@
-name: Build
+name: Recovery Build (Legacy) - ubuntu:14.04 docker
 
 on:
-  workflow_dispatch:
-    inputs:
-      MANIFEST_URL:
-        description: 'MANIFEST_URL (if want to use SSH keys, use git@github.com:XXXXX)'
-        required: true
-        default: 'https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git'
-      MANIFEST_BRANCH:
-        description: 'MANIFEST_BRANCH'
-        required: true
-        default: 'twrp-4.4-deprecated'
-      DEVICE_TREE_URL:
-        description: 'DEVICE_TREE_URL'
-        required: true
-        default: 'https://github.com/coara-chocomaru/SH06D-twrp'
-      DEVICE_TREE_BRANCH:
-        description: 'DEVICE_TREE_BRANCH'
-        required: true
-        default: 'main'
-      DEVICE_PATH:
-        description: 'DEVICE_PATH'
-        required: true
-        default: 'device/shrp/sh06d'
-      COMMON_TREE_URL:
-        description: 'COMMON_TREE_URL (if no common tree, leave blank)'
-        required: false
-      COMMON_PATH:
-        description: 'COMMON_PATH (if no common tree, leave blank)'
-        required: false
-      DEVICE_NAME:
-        description: 'DEVICE_NAME'
-        required: true
-        default: 'sh06d'
-      MAKEFILE_NAME:
-        description: 'MAKEFILE_NAME'
-        required: true
-        default: 'omni_sh06d'
-      BUILD_TARGET:
-        description: 'BUILD_TARGET'
-        required: true
-        default: 'recovery'
+  push:
+    branches:
+      - main
+
+env:
+  MANIFEST_URL: 'https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni'
+  MANIFEST_BRANCH: 'twrp-4.4-deprecated'
+  DEVICE_TREE_URL: 'https://github.com/coara-chocomaru/SH06D-twrp'
+  DEVICE_TREE_BRANCH: 'main'
+  DEVICE_PATH: 'device/shrp/sh06d'
+  DEVICE_NAME: 'sh06d'
+  MAKEFILE_NAME: 'omni_sh06d'
+  BUILD_TARGET: 'recovery'
+  JAVA_VERSION: '7'
 
 jobs:
-  build:
-    defaults:
-      run:
-        shell: bash -l {0}
+  build-14-04:
     if: github.event.repository.owner.id == github.event.sender.id
-    runs-on: ubuntu-22.04
-    container:
-      image: ubuntu:20.04
-      options: --user root
-    permissions:
-      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
     steps:
-    - name: Display Run Parameters
-      run: |
-        echo "::group::User Environment Variables"
-        echo "Manifest URL: ${{ github.event.inputs.MANIFEST_URL }}"
-        echo "Manifest Branch: ${{ github.event.inputs.MANIFEST_BRANCH }}"
-        echo "Device Tree URL: ${{ github.event.inputs.DEVICE_TREE_URL }}"
-        echo "Device Tree Branch: ${{ github.event.inputs.DEVICE_TREE_BRANCH }}"
-        echo "Device Path: ${{ github.event.inputs.DEVICE_PATH }}"
-        echo "Device Name: ${{ github.event.inputs.DEVICE_NAME }}"
-        echo "Makefile Name: ${{ github.event.inputs.MAKEFILE_NAME }}"
-        echo "Build Target: ${{ github.event.inputs.BUILD_TARGET }}.img"
-        echo "::endgroup::"
-    - name: Check Out
-      uses: actions/checkout@v3
-    - name: Prepare the environment
-      run: |
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get update -y
-        apt-get -y upgrade
-        apt-get -y remove firefox || true
-        apt-get -y autoremove || true
-        apt-get -y install --no-install-recommends gperf gcc-multilib gcc-10-multilib sudo g++-multilib make g++-10-multilib libc6-dev lib32ncurses5-dev x11proto-core-dev libx11-dev tree lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc ccache lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libwxgtk3.0-gtk3-dev libxml2 lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libncurses5 ca-certificates curl git openssh-client aria2 zip unzip python apt-transport-https openjdk-6-jdk gnupg -y
-    - name: Install Java SE 7u80
-      run: |
-        mkdir -p /usr/local/java
-        cd /usr/local/java
-        aria2c -s16 -x16 -k1M "https://github.com/mochenya/device_koobee_H3/releases/download/oracle/jdk-7u80-linux-x64.tar.gz"
-        tar xvzf jdk-7u80-linux-x64.tar.gz
-        echo -e "\nJAVA_HOME=/usr/local/java/jdk1.7.0_80\nPATH=$PATH:$HOME/bin:$JAVA_HOME/bin\nexport JAVA_HOME\nexport PATH" >> /etc/profile
-        source /etc/profile
-    - name: Setup SSH Keys
-      if: ${{ startsWith(github.event.inputs.MANIFEST_URL, 'git@github.com') }}
-      uses: webfactory/ssh-agent@v0.5.4
-      with:
-          ssh-private-key: |
-              ${{ secrets.SSH_PRIVATE_KEY }}
-    - name: Install repo
-      run: |
-        mkdir -p ~/bin
-        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-        chmod a+x ~/bin/repo
-        ln -sf ~/bin/repo /usr/bin/repo
-    - name: Initialize repo
-      run: |
-        mkdir workspace
-        cd workspace
-        echo "workspace-folder=$(pwd)" >> $GITHUB_OUTPUT
-        git config --global user.name "Nico170420"
-        git config --global user.email "b170420nc@gmail.com"
-        repo init --depth=1 -u ${{ github.event.inputs.MANIFEST_URL }} -b ${{ github.event.inputs.MANIFEST_BRANCH }}
-      id: pwd
-    - name: Repo Sync
-      run: |
-        repo sync -j$(nproc --all) --force-sync
-      working-directory: workspace
-    - name: Clone device tree
-      run: |
-        git clone ${{ github.event.inputs.DEVICE_TREE_URL }} -b ${{ github.event.inputs.DEVICE_TREE_BRANCH }} ./${{ github.event.inputs.DEVICE_PATH }}
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-    - name: Clone common tree
-      if: |
-        github.event.inputs.COMMON_TREE_URL != null
-        && github.event.inputs.COMMON_PATH != null
-      run: |
-        git clone ${{ github.event.inputs.COMMON_TREE_URL }} -b ${{ github.event.inputs.DEVICE_TREE_BRANCH }} ./${{ github.event.inputs.COMMON_PATH }}
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-    - name: Check Build Tree
-      uses: haya14busa/action-cond@v1
-      id: buildtree
-      with:
-        cond: ${{ github.event.inputs.MANIFEST_BRANCH == 'twrp-11' || github.event.inputs.MANIFEST_BRANCH == 'twrp-12.1' }}
-        if_true: twrp
-        if_false: omni
-    - name: Sync Device Dependencies
-      run: |
-        bash ${GITHUB_WORKSPACE}/scripts/convert.sh ${{ github.event.inputs.DEVICE_PATH }}/${{ steps.buildtree.outputs.value }}.dependencies
-        repo sync -j$(nproc --all)
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-      continue-on-error: true
-    - name: Set Swap Space
-      uses: pierotofy/set-swap-space@master
-      with:
-        swap-size-gb: 12
-      env:
-       JAVA_HOME: /usr/lib/jvm/java-6-openjdk-amd64
-       PATH: ${{ env.JAVA_HOME }}/bin:${{ env.PATH }}
-    - name: Building recovery
-      run: |
-        source build/envsetup.sh
-        export ALLOW_MISSING_DEPENDENCIES=true
-        lunch ${{ github.event.inputs.MAKEFILE_NAME }}-eng && make clean && make ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-    - name: Upload to Release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: | 
-          workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/${{ github.event.inputs.BUILD_TARGET }}.img
-          workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/*.zip
-        name: ${{ github.event.inputs.DEVICE_NAME }}-${{ github.run_id }}
-        tag_name: ${{ github.run_id }}
-        body: |
-          Manifest: ${{ github.event.inputs.MANIFEST_BRANCH }}
-          Device: ${{ github.event.inputs.DEVICE_NAME }}
-          Target: ${{ github.event.inputs.BUILD_TARGET }}.img
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checkout repository (host)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Show parameters
+        run: |
+          echo "Manifest URL: ${{ env.MANIFEST_URL }}"
+          echo "Device Tree URL: ${{ env.DEVICE_TREE_URL }}"
+          echo "Device Path: ${{ env.DEVICE_PATH }}"
+          echo "Device Name: ${{ env.DEVICE_NAME }}"
+        
+
+      - name: Ensure ubuntu:14.04 image is available
+        run: docker pull ubuntu:14.04
+
+      - name: Create containerized build script (host)
+        run: |
+          cat > "${{ github.workspace }}/build.sh" <<'EOF'
+          #!/bin/bash
+          set -euo pipefail
+            export DEBIAN_FRONTEND=noninteractive
+            sudo apt update
+            sudo apt -y upgrade
+            sudo apt -y install gperf gcc-multilib g++-multilib libc6-dev lib32ncurses5-dev x11proto-core-dev libx11-dev tree lib32z1-dev git libgl1-mesa-dev libxml2-utils xsltproc bc ccache lib32readline-gplv2-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libwxgtk2.8-dev libxml2 lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-4.8-dev curl libncurses5 python3 python2.7
+
+
+          mkdir -p /root/bin
+          curl -sSfL https://github.com/coara-chocomaru/setappops/releases/download/%E4%BF%9D%E7%AE%A1%E7%94%A8%E3%83%AA%E3%83%AA%E3%83%BC%E3%82%B9/repo -o /root/bin/repo
+          chmod a+x /root/bin/repo
+          export PATH=/root/bin:$PATH
+          ln -sf /usr/bin/python2.7 /usr/bin/python
+          # prepare workspace
+          mkdir -p /workspace
+          cd /workspace
+          
+          # --- Environment (injected by Actions when this file was created) ---
+          MANIFEST_URL="${MANIFEST_URL}"
+          MANIFEST_BRANCH="${MANIFEST_BRANCH}"
+          DEVICE_TREE_URL="${DEVICE_TREE_URL}"
+          DEVICE_TREE_BRANCH="${DEVICE_TREE_BRANCH}"
+          DEVICE_PATH="${DEVICE_PATH}"
+          DEVICE_NAME="${DEVICE_NAME}"
+          MAKEFILE_NAME="${MAKEFILE_NAME}"
+          BUILD_TARGET="${BUILD_TARGET}"
+          JAVA_VERSION="${JAVA_VERSION}"
+
+          echo "Starting build inside container..."
+          echo "MANIFEST_URL=${MANIFEST_URL}"
+          echo "DEVICE_PATH=${DEVICE_PATH}"
+          echo "DEVICE_NAME=${DEVICE_NAME}"
+
+          # Configure apt to use old-releases for 14.04
+          sed -i 's|archive.ubuntu.com|old-releases.ubuntu.com|g' /etc/apt/sources.list || true
+          sed -i 's|security.ubuntu.com|old-releases.ubuntu.com|g' /etc/apt/sources.list || true
+
+
+          # configure git user (repo init may require)
+          git config --global user.name 'azwhikaru' || true
+          git config --global user.email 'azwhikaru+37921907@github.com' || true
+
+          # init and sync manifest
+          #python3 /root/bin/repo init --depth=1 -u "${MANIFEST_URL}" -b "${MANIFEST_BRANCH}"
+          #python3 /root/bin/repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+          repo init --depth=1 -u "${MANIFEST_URL}" -b "${MANIFEST_BRANCH}"
+          repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+
+          # clone device tree into workspace path (safe replace)
+          TARGET_DIR="/workspace/${DEVICE_PATH}"
+          mkdir -p "$(dirname "$TARGET_DIR")"
+          if [ -d "$TARGET_DIR" ] && [ -n "$(ls -A $TARGET_DIR 2>/dev/null)" ]; then
+            mv "$TARGET_DIR" "${TARGET_DIR}.bak.$(date +%s)" || true
+          fi
+          git clone --depth=1 -b "${DEVICE_TREE_BRANCH}" "${DEVICE_TREE_URL}" "$TARGET_DIR" || true
+
+          # create swapfile if possible
+          if [ ! -f /swapfile ]; then
+            fallocate -l 12G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=12288
+            chmod 600 /swapfile || true
+            mkswap /swapfile || true
+            swapon /swapfile || true
+            echo '/swapfile none swap sw 0 0' >> /etc/fstab || true
+          fi
+
+          # ensure python symlink for legacy builds
+          if [ -x /usr/bin/python2.7 ]; then
+            ln -sf /usr/bin/python2.7 /usr/bin/python || true
+          fi
+
+          # Start Android build
+          export ALLOW_MISSING_DEPENDENCIES=true
+          export LC_ALL=C
+          export PYTHON=/usr/bin/python3
+          if [ -f build/envsetup.sh ]; then
+            source build/envsetup.sh
+            lunch "${MAKEFILE_NAME}-eng" || true
+            make clean || true
+            make -j$(nproc --all) "${BUILD_TARGET}" || true
+          else
+            echo "ERROR: build/envsetup.sh not found. repo init/sync may have failed."
+            exit 1
+          fi
+
+          echo "Build finished inside container. Artifacts should be in /workspace/out/target/product/${DEVICE_NAME}"
+          ls -la /workspace/out/target/product/${DEVICE_NAME} || true
+          EOF
+
+          chmod +x "${{ github.workspace }}/build.sh"
+
+      - name: Run build inside ubuntu:14.04 container (docker)
+        run: |
+          docker run --rm --privileged \
+            -v "${{ github.workspace }}":/workspace \
+            -w /workspace \
+            -e MANIFEST_URL="${{ env.MANIFEST_URL }}" \
+            -e MANIFEST_BRANCH="${{ env.MANIFEST_BRANCH }}" \
+            -e DEVICE_TREE_URL="${{ env.DEVICE_TREE_URL }}" \
+            -e DEVICE_TREE_BRANCH="${{ env.DEVICE_TREE_BRANCH }}" \
+            -e DEVICE_PATH="${{ env.DEVICE_PATH }}" \
+            -e DEVICE_NAME="${{ env.DEVICE_NAME }}" \
+            -e MAKEFILE_NAME="${{ env.MAKEFILE_NAME }}" \
+            -e BUILD_TARGET="${{ env.BUILD_TARGET }}" \
+            -e JAVA_VERSION="${{ env.JAVA_VERSION }}" \
+            ubuntu:14.04 /bin/bash -c "/workspace/build.sh"
+
+      - name: List artifacts on host (sanity)
+        run: |
+          echo "Artifacts (host view):"
+          ls -la "${{ github.workspace }}/out/target/product/${{ env.DEVICE_NAME }}" || true
+
+      - name: Create GitHub Release and upload artifacts (host)
+        if: always()
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            out/target/product/${{ env.DEVICE_NAME }}/*.zip
+            out/target/product/${{ env.DEVICE_NAME }}/*.img
+            out/target/product/${{ env.DEVICE_NAME }}/*vendor*.img
+          name: ${{ env.DEVICE_NAME }}-android5-${{ github.run_id }}
+          tag_name: ${{ github.run_id }}
+          body: |
+            Manifest: ${{ env.MANIFEST_BRANCH }}
+            Device: ${{ env.DEVICE_NAME }}
+            Target: ${{ env.BUILD_TARGET }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
