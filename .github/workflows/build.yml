@@ -71,7 +71,7 @@ jobs:
       run: |
         set -euo pipefail
         sudo apt-get update
-        DEBIAN_FRONTEND=noninteractive sudo apt-get install -y --no-install-recommends curl git unzip python2 python3 python3-distutils wget rsync build-essential bison flex libncurses5-dev lib32z1 zlib1g-dev bc ccache make gcc-multilib g++-multilib lib32readline-dev lib32z1-dev liblz4-tool libsdl1.2-dev libxml2 xsltproc lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev tar file openssh-client openjdk-8-jdk
+        DEBIAN_FRONTEND=noninteractive sudo apt-get install -y --no-install-recommends curl git unzip python2.7 sudo make python3 python3-distutils wget rsync build-essential bison flex libncurses5-dev lib32z1 zlib1g-dev bc ccache make gcc-multilib g++-multilib lib32readline-dev lib32z1-dev liblz4-tool libsdl1.2-dev libxml2 xsltproc lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev tar file openssh-client openjdk-8-jdk
         if command -v python2 >/dev/null 2>&1 && [ ! -e /usr/bin/python ]; then
           sudo ln -sf /usr/bin/python2 /usr/bin/python || true
         fi
