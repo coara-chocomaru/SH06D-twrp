@@ -115,7 +115,7 @@ jobs:
       run: |
         set -euo pipefail
         cd "${{ steps.pwd.outputs.workspace-folder }}"
-        repo sync -c --no-clone-bundle --depth=1 -j$(nproc) || repo sync -j2 || true
+        repo sync -j2
 
     - name: Clone device tree
       run: |
