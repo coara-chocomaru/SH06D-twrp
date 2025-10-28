@@ -103,6 +103,7 @@ jobs:
       id: pwd
       run: |
         set -euo pipefail
+        ln -s /usr/bin/python3 /usr/bin/python
         mkdir -p workspace
         cd workspace
         echo "workspace-folder=$(pwd)" >> $GITHUB_OUTPUT
