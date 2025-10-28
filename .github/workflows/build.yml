@@ -54,6 +54,11 @@ jobs:
       contents: write
     timeout-minutes: 360
 
+    # ← ここでジョブ内の全 run ステップを bash で実行させる
+    defaults:
+      run:
+        shell: bash -l {0}
+
     steps:
     - name: Display Run Parameters
       run: |
@@ -78,14 +83,10 @@ jobs:
       run: |
         set -euo pipefail
         apt-get update
-
         # install CA certs first so curl/git work correctly
         apt-get install -y --no-install-recommends ca-certificates apt-transport-https gnupg
-
-        # update CA bundle
         update-ca-certificates || true
 
-        # main dev packages (keep minimal; add/remove per build logs)
         DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             git-core curl unzip python2 python3 python3-distutils wget rsync \
             build-essential bison flex libncurses5-dev lib32z1 \
@@ -116,6 +117,7 @@ jobs:
 
     - name: Install repo
       run: |
+        set -euo pipefail
         mkdir -p $HOME/bin
         curl -sSLo $HOME/bin/repo https://storage.googleapis.com/git-repo-downloads/repo
         chmod a+x $HOME/bin/repo
@@ -124,6 +126,7 @@ jobs:
     - name: Initialize repo
       id: pwd
       run: |
+        set -euo pipefail
         mkdir -p workspace
         cd workspace
         echo "workspace-folder=$(pwd)" >> $GITHUB_OUTPUT
@@ -134,22 +137,26 @@ jobs:
 
     - name: Repo Sync
       run: |
+        set -euo pipefail
         cd "${{ steps.pwd.outputs.workspace-folder }}"
         repo sync -c --no-clone-bundle --depth=1 -j$(nproc) || repo sync -j2
 
     - name: Clone device tree
       run: |
+        set -euo pipefail
         cd "${{ steps.pwd.outputs.workspace-folder }}"
         git clone --depth 1 -b "${{ github.event.inputs.DEVICE_TREE_BRANCH }}" "${{ github.event.inputs.DEVICE_TREE_URL }}" "${{ github.event.inputs.DEVICE_PATH }}"
 
     - name: Clone common tree (optional)
       if: ${{ github.event.inputs.COMMON_TREE_URL != '' && github.event.inputs.COMMON_PATH != '' }}
       run: |
+        set -euo pipefail
         cd "${{ steps.pwd.outputs.workspace-folder }}"
         git clone --depth 1 -b "${{ github.event.inputs.DEVICE_TREE_BRANCH }}" "${{ github.event.inputs.COMMON_TREE_URL }}" "${{ github.event.inputs.COMMON_PATH }}"
 
     - name: Sync Device Dependencies (best-effort)
       run: |
+        set -euo pipefail
         cd "${{ steps.pwd.outputs.workspace-folder }}"
         if [ -f "${GITHUB_WORKSPACE}/scripts/convert.sh" ]; then
           bash ${GITHUB_WORKSPACE}/scripts/convert.sh "${{ github.event.inputs.DEVICE_PATH }}".dependencies || true
@@ -161,12 +168,14 @@ jobs:
 
     - name: Switch to Python2 (if needed)
       run: |
+        set -euo pipefail
         if command -v python2 >/dev/null 2>&1; then
           ln -sf /usr/bin/python2 /usr/bin/python || true
         fi
 
     - name: Building recovery
       run: |
+        set -euo pipefail
         cd "${{ steps.pwd.outputs.workspace-folder }}"
         source build/envsetup.sh || true
         export ALLOW_MISSING_DEPENDENCIES=true
