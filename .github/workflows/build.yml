@@ -31,6 +31,10 @@ on:
         description: 'COMMON_PATH (if no common tree, leave blank)'
         required: false
         default: ''
+      COMMON_TREE_BRANCH:
+        description: 'COMMON_TREE_BRANCH (if cloning a common tree)'
+        required: false
+        default: 'main'
       DEVICE_NAME:
         description: 'DEVICE_NAME'
         required: true
@@ -75,8 +79,8 @@ jobs:
     - name: Check Out
       uses: actions/checkout@v4
 
-    - name: Cleanup
-      uses: rokibhasansagar/slimhub_actions@main
+    # Removed the external 'slimhub_actions' cleanup step because it expects host utilities (sudo, docker, parallel, etc.)
+    # which cause noisy errors inside the job container. Keeping the environment minimal and explicit instead.
 
     - name: Prepare the environment (install packages + CA certs + ssh)
       run: |
@@ -93,18 +97,18 @@ jobs:
             lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev \
             libsdl1.2-dev libxml2 xsltproc lzop pngcrush schedtool \
             squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static \
-            libstdc++-10-dev tar file openssh-client
+            libstdc++-10-dev tar file openssh-client openjdk-8-jdk
 
         # ensure `python` points to python2 for legacy tools (if available)
         if command -v python2 >/dev/null 2>&1 && [ ! -e /usr/bin/python ]; then
           ln -sf /usr/bin/python2 /usr/bin/python || true
         fi
 
-    - name: Install OpenJDK
+    - name: Install Java 8 (Temurin)
       uses: actions/setup-java@v4
       with:
-        distribution: 'zulu'
-        java-version: '11'
+        distribution: 'temurin'
+        java-version: '1.8'
 
     - name: Setup SSH Keys (if using SSH URLs)
       if: ${{ startsWith(github.event.inputs.MANIFEST_URL, 'git@github.com') || 
@@ -151,7 +155,8 @@ jobs:
       run: |
         set -euo pipefail
         cd "${{ steps.pwd.outputs.workspace-folder }}"
-        git clone --depth 1 -b "${{ github.event.inputs.DEVICE_TREE_BRANCH }}" "${{ github.event.inputs.COMMON_TREE_URL }}" "${{ github.event.inputs.COMMON_PATH }}"
+        # Use COMMON_TREE_BRANCH (fix: previously used DEVICE_TREE_BRANCH by mistake)
+        git clone --depth 1 -b "${{ github.event.inputs.COMMON_TREE_BRANCH }}" "${{ github.event.inputs.COMMON_TREE_URL }}" "${{ github.event.inputs.COMMON_PATH }}"
 
     - name: Sync Device Dependencies (best-effort)
       run: |
@@ -172,17 +177,49 @@ jobs:
           ln -sf /usr/bin/python2 /usr/bin/python || true
         fi
 
-    - name: Building recovery
+    - name: Building recovery (robust)
       run: |
         set -euo pipefail
         cd "${{ steps.pwd.outputs.workspace-folder }}"
+        # Source envsetup (may fail for some manifests; continue)
         source build/envsetup.sh || true
         export ALLOW_MISSING_DEPENDENCIES=true
-        if [ -n "${{ github.event.inputs.MAKEFILE_NAME }}" ] && [ -n "${{ github.event.inputs.DEVICE_NAME }}" ]; then
-          lunch "${{ github.event.inputs.MAKEFILE_NAME }}-${{ github.event.inputs.DEVICE_NAME }}-eng" || true
-          make clean || true
-          make "${{ github.event.inputs.BUILD_TARGET }}"image -j$(nproc) || make -j1 "${{ github.event.inputs.BUILD_TARGET }}"image || true
-        else
+
+        # Ensure a Java 8 JDK is available to the build (tools.jar is required by old build systems).
+        if [ -z "${JAVA_HOME:-}" ]; then
+          # common JAVA_HOME on ubuntu openjdk-8
+          export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64 || true
+        fi
+        echo "Using JAVA_HOME=$JAVA_HOME"
+
+        # Try several lunch combos (many device trees expose different combo names)
+        combos=(
+          "${{ github.event.inputs.MAKEFILE_NAME }}-${{ github.event.inputs.DEVICE_NAME }}-eng"
+          "${{ github.event.inputs.MAKEFILE_NAME }}_${{ github.event.inputs.DEVICE_NAME }}-eng"
+          "${{ github.event.inputs.MAKEFILE_NAME }}-eng"
+          "${{ github.event.inputs.DEVICE_NAME }}-eng"
+        )
+        LUNCH_OK=0
+        for c in "${combos[@]}"; do
+          echo "Trying lunch: $c"
+          if lunch "$c" 2>/dev/null; then
+            echo "lunch succeeded: $c"
+            LUNCH_OK=1
+            break
+          else
+            echo "lunch failed: $c"
+          fi
+        done
+
+        if [ "$LUNCH_OK" -ne 1 ]; then
+          echo "No valid lunch combo found; continuing with make (some builds can succeed without explicit lunch)."
+        fi
+
+        make clean || true
+
+        # Build recovery image (try parallel then single-thread fallback)
+        if ! make "${{ github.event.inputs.BUILD_TARGET }}"image -j$(nproc); then
+          echo "Parallel build failed — retrying single-threaded"
           make -j1 "${{ github.event.inputs.BUILD_TARGET }}"image || true
         fi
 
