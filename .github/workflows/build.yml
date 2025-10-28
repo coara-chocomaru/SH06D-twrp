@@ -86,7 +86,7 @@ jobs:
 
           # init and sync manifest
           #python3 /root/bin/repo init --depth=1 -u "${MANIFEST_URL}" -b "${MANIFEST_BRANCH}"
-          ¥python3 /root/bin/repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+          #python3 /root/bin/repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
           repo init --depth=1 -u "${MANIFEST_URL}" -b "${MANIFEST_BRANCH}"
           repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
@@ -115,7 +115,7 @@ jobs:
           # Start Android build
           export ALLOW_MISSING_DEPENDENCIES=true
           export LC_ALL=C
-
+          export PYTHON=/usr/bin/python3
           if [ -f build/envsetup.sh ]; then
             source build/envsetup.sh
             lunch "${MAKEFILE_NAME}-eng" || true
