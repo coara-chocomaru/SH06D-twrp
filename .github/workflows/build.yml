@@ -121,14 +121,7 @@ jobs:
       run: |
         set -euo pipefail
         cd "${{ steps.pwd.outputs.workspace-folder }}"
-        git clone --depth 1 -b "${{ github.event.inputs.DEVICE_TREE_BRANCH }}" "${{ github.event.inputs.DEVICE_TREE_URL }}" "${{ github.event.inputs.DEVICE_PATH }}"
-
-    - name: Clone common tree (optional)
-      if: ${{ github.event.inputs.COMMON_TREE_URL != '' && github.event.inputs.COMMON_PATH != '' }}
-      run: |
-        set -euo pipefail
-        cd "${{ steps.pwd.outputs.workspace-folder }}"
-        git clone --depth 1 -b "${{ github.event.inputs.COMMON_TREE_BRANCH }}" "${{ github.event.inputs.COMMON_TREE_URL }}" "${{ github.event.inputs.COMMON_PATH }}"
+        git clone -b "${{ github.event.inputs.DEVICE_TREE_BRANCH }}" "${{ github.event.inputs.DEVICE_TREE_URL }}" "${{ github.event.inputs.DEVICE_PATH }}"
 
     - name: Sync Device Dependencies (best-effort)
       run: |
