@@ -176,9 +176,7 @@ jobs:
           update-alternatives --set java $(readlink -f /usr/bin/java) || true
           update-alternatives --set javac $(readlink -f /usr/bin/javac) || true
         fi
-        # --- End overrides ---
-#  (many device trees expose different combo names)
-        combos=(
+          combos=(
           "${{ github.event.inputs.MAKEFILE_NAME }}-${{ github.event.inputs.DEVICE_NAME }}-eng"
           "${{ github.event.inputs.MAKEFILE_NAME }}_${{ github.event.inputs.DEVICE_NAME }}-eng"
           "${{ github.event.inputs.MAKEFILE_NAME }}-eng"
