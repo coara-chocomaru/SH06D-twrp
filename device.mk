@@ -5,4 +5,4 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-LOCAL_PATH := device/shrp/sh06d
+LOCAL_PATH := device/sharp/sh06d
