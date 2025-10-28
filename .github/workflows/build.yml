@@ -165,22 +165,19 @@ jobs:
           ln -sf /usr/bin/python2 /usr/bin/python || true
         fi
 
-    - name: Building recovery (robust)
-      run: |
-        set -euo pipefail
-        cd "${{ steps.pwd.outputs.workspace-folder }}"
-        # Source envsetup (may fail for some manifests; continue)
-        source build/envsetup.sh || true
-        export ALLOW_MISSING_DEPENDENCIES=true
-
-        # Ensure a Java 8 JDK is available to the build (tools.jar is required by old build systems).
-        if [ -z "${JAVA_HOME:-}" ]; then
-          # common JAVA_HOME on ubuntu openjdk-8
-          export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64 || true
+        # --- Compatibility overrides for legacy Android builds ---
+        # Accept OpenJDK 8 as a build Java (matches build/core/main.mk EXPERIMENTAL_USE_JAVA8)
+        export EXPERIMENTAL_USE_JAVA8=1 || true
+        # Ensure JAVA_HOME points to the system OpenJDK8 (installed earlier)
+        export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64 || true
+        export PATH="$JAVA_HOME/bin:$PATH" || true
+        # Try to set the alternatives to the installed OpenJDK 8 (best-effort)
+        if command -v update-alternatives >/dev/null 2>&1; then
+          update-alternatives --set java $(readlink -f /usr/bin/java) || true
+          update-alternatives --set javac $(readlink -f /usr/bin/javac) || true
         fi
-        echo "Using JAVA_HOME=$JAVA_HOME"
-
-        # Try several lunch combos (many device trees expose different combo names)
+        # --- End overrides ---
+        (many device trees expose different combo names)
         combos=(
           "${{ github.event.inputs.MAKEFILE_NAME }}-${{ github.event.inputs.DEVICE_NAME }}-eng"
           "${{ github.event.inputs.MAKEFILE_NAME }}_${{ github.event.inputs.DEVICE_NAME }}-eng"
