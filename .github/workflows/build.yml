@@ -54,7 +54,6 @@ jobs:
       contents: write
     timeout-minutes: 360
 
-    # ← ここでジョブ内の全 run ステップを bash で実行させる
     defaults:
       run:
         shell: bash -l {0}
@@ -79,22 +78,22 @@ jobs:
     - name: Cleanup
       uses: rokibhasansagar/slimhub_actions@main
 
-    - name: Prepare the environment (install packages + CA certs)
+    - name: Prepare the environment (install packages + CA certs + ssh)
       run: |
         set -euo pipefail
         apt-get update
-        # install CA certs first so curl/git work correctly
         apt-get install -y --no-install-recommends ca-certificates apt-transport-https gnupg
+
         update-ca-certificates || true
 
         DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            git-core curl unzip python2 python3 python3-distutils wget rsync \
+            git curl unzip python2 python3 python3-distutils wget rsync \
             build-essential bison flex libncurses5-dev lib32z1 \
             zlib1g-dev bc ccache make gcc-multilib g++-multilib \
             lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev \
             libsdl1.2-dev libxml2 xsltproc lzop pngcrush schedtool \
             squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static \
-            libstdc++-10-dev tar file
+            libstdc++-10-dev tar file openssh-client
 
         # ensure `python` points to python2 for legacy tools (if available)
         if command -v python2 >/dev/null 2>&1 && [ ! -e /usr/bin/python ]; then
