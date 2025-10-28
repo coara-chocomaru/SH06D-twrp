@@ -19,6 +19,10 @@ on:
         description: 'DEVICE_TREE_BRANCH'
         required: true
         default: 'main'
+      COMMON_TREE_BRANCH:
+        description: 'COMMON_TREE_BRANCH (if no common tree, leave blank)'
+        required: false
+        default: 'main'
       DEVICE_PATH:
         description: 'DEVICE_PATH'
         required: true
@@ -40,8 +44,6 @@ jobs:
   build:
     if: github.event.repository.owner.id == github.event.sender.id
     runs-on: ubuntu-latest
-    container:
-      image: ubuntu:20.04
     permissions:
       contents: write
     timeout-minutes: 360
@@ -67,35 +69,22 @@ jobs:
     - name: Check Out
       uses: actions/checkout@v4
 
-    # Removed the external 'slimhub_actions' cleanup step because it expects host utilities (sudo, docker, parallel, etc.)
-    # which cause noisy errors inside the job container. Keeping the environment minimal and explicit instead.
-
-    - name: Prepare the environment (install packages + CA certs + ssh)
+    - name: Prepare the environment (install packages)
       run: |
         set -euo pipefail
         apt-get update
-        apt-get install -y --no-install-recommends ca-certificates apt-transport-https gnupg
-
-        update-ca-certificates || true
-
-        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            git curl unzip python2 python3 python3-distutils wget rsync \
-            build-essential bison flex libncurses5-dev lib32z1 \
-            zlib1g-dev bc ccache make gcc-multilib g++-multilib \
-            lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev \
-            libsdl1.2-dev libxml2 xsltproc lzop pngcrush schedtool \
-            squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static \
-            libstdc++-10-dev tar file openssh-client openjdk-8-jdk
-
-        # ensure `python` points to python2 for legacy tools (if available)
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl git unzip python2 python3 python3-distutils wget rsync build-essential bison flex libncurses5-dev lib32z1 zlib1g-dev bc ccache make gcc-multilib g++-multilib lib32readline-dev lib32z1-dev liblz4-tool libsdl1.2-dev libxml2 xsltproc lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev tar file openssh-client openjdk-8-jdk
         if command -v python2 >/dev/null 2>&1 && [ ! -e /usr/bin/python ]; then
           ln -sf /usr/bin/python2 /usr/bin/python || true
         fi
+        update-alternatives --set java $(readlink -f /usr/bin/java) || true
+        export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+        export PATH="$JAVA_HOME/bin:$PATH"
 
-    - name: Install Java 8 (Temurin)
+    - name: Setup Java (actions/setup-java)
       uses: actions/setup-java@v4
       with:
-        distribution: 'temurin'
+        distribution: 'zulu'
         java-version: '8'
 
     - name: Setup SSH Keys (if using SSH URLs)
@@ -121,14 +110,13 @@ jobs:
         echo "workspace-folder=$(pwd)" >> $GITHUB_OUTPUT
         git config --global user.name "github-actions[bot]"
         git config --global user.email "actions@github.com"
-        repo init --depth=1 -u "${{ github.event.inputs.MANIFEST_URL }}" -b "${{ github.event.inputs.MANIFEST_BRANCH }}" || \
-          repo init --repo-branch=repo-1 -u "${{ github.event.inputs.MANIFEST_URL }}" -b "${{ github.event.inputs.MANIFEST_BRANCH }}"
+        repo init --depth=1 -u "${{ github.event.inputs.MANIFEST_URL }}" -b "${{ github.event.inputs.MANIFEST_BRANCH }}" || repo init --repo-branch=repo-1 -u "${{ github.event.inputs.MANIFEST_URL }}" -b "${{ github.event.inputs.MANIFEST_BRANCH }}"
 
     - name: Repo Sync
       run: |
         set -euo pipefail
         cd "${{ steps.pwd.outputs.workspace-folder }}"
-        repo sync -c --no-clone-bundle --depth=1 -j$(nproc) || repo sync -j2
+        repo sync -c --no-clone-bundle --depth=1 -j$(nproc) || repo sync -j2 || true
 
     - name: Clone device tree
       run: |
@@ -141,7 +129,6 @@ jobs:
       run: |
         set -euo pipefail
         cd "${{ steps.pwd.outputs.workspace-folder }}"
-        # Use COMMON_TREE_BRANCH (fix: previously used DEVICE_TREE_BRANCH by mistake)
         git clone --depth 1 -b "${{ github.event.inputs.COMMON_TREE_BRANCH }}" "${{ github.event.inputs.COMMON_TREE_URL }}" "${{ github.event.inputs.COMMON_PATH }}"
 
     - name: Sync Device Dependencies (best-effort)
@@ -152,62 +139,30 @@ jobs:
           bash ${GITHUB_WORKSPACE}/scripts/convert.sh "${{ github.event.inputs.DEVICE_PATH }}".dependencies || true
           repo sync -j$(nproc) || true
         else
-          echo "No convert.sh found; skipping dependency conversion."
+          true
         fi
       continue-on-error: true
 
-    - name: Switch to Python2 (if needed)
+    - name: Building recovery
       run: |
         set -euo pipefail
-        if command -v python2 >/dev/null 2>&1; then
-          ln -sf /usr/bin/python2 /usr/bin/python || true
-        fi
-
-        # --- Compatibility overrides for legacy Android builds ---
-        # Accept OpenJDK 8 as a build Java (matches build/core/main.mk EXPERIMENTAL_USE_JAVA8)
-        export EXPERIMENTAL_USE_JAVA8=1 || true
-        # Ensure JAVA_HOME points to the system OpenJDK8 (installed earlier)
-        export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64 || true
-        export PATH="$JAVA_HOME/bin:$PATH" || true
-        # Try to set the alternatives to the installed OpenJDK 8 (best-effort)
-        if command -v update-alternatives >/dev/null 2>&1; then
-          update-alternatives --set java $(readlink -f /usr/bin/java) || true
-          update-alternatives --set javac $(readlink -f /usr/bin/javac) || true
-        fi
-          combos=(
-          "${{ github.event.inputs.MAKEFILE_NAME }}-${{ github.event.inputs.DEVICE_NAME }}-eng"
-          "${{ github.event.inputs.MAKEFILE_NAME }}_${{ github.event.inputs.DEVICE_NAME }}-eng"
-          "${{ github.event.inputs.MAKEFILE_NAME }}-eng"
-          "${{ github.event.inputs.DEVICE_NAME }}-eng"
-        )
-        LUNCH_OK=0
+        cd "${{ steps.pwd.outputs.workspace-folder }}"
+        source build/envsetup.sh || true
+        export ALLOW_MISSING_DEPENDENCIES=true
+        export EXPERIMENTAL_USE_JAVA8=1
+        export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+        export PATH="$JAVA_HOME/bin:$PATH"
+        combos=("${{ github.event.inputs.MAKEFILE_NAME }}-${{ github.event.inputs.DEVICE_NAME }}-eng" "${{ github.event.inputs.MAKEFILE_NAME }}_${{ github.event.inputs.DEVICE_NAME }}-eng" "${{ github.event.inputs.MAKEFILE_NAME }}-eng" "${{ github.event.inputs.DEVICE_NAME }}-eng" "${{ github.event.inputs.MAKEFILE_NAME }}")
         for c in "${combos[@]}"; do
-          echo "Trying lunch: $c"
-          if lunch "$c" 2>/dev/null; then
-            echo "lunch succeeded: $c"
-            LUNCH_OK=1
-            break
-          else
-            echo "lunch failed: $c"
-          fi
+          lunch "$c" && break || true
         done
-
-        if [ "$LUNCH_OK" -ne 1 ]; then
-          echo "No valid lunch combo found; continuing with make (some builds can succeed without explicit lunch)."
-        fi
-
         make clean || true
-
-        # Build recovery image (try parallel then single-thread fallback)
-        if ! make "${{ github.event.inputs.BUILD_TARGET }}"image -j$(nproc); then
-          echo "Parallel build failed — retrying single-threaded"
-          make -j1 "${{ github.event.inputs.BUILD_TARGET }}"image || true
-        fi
+        make "${{ github.event.inputs.BUILD_TARGET }}"image -j$(nproc) || make -j1 "${{ github.event.inputs.BUILD_TARGET }}"image || true
 
     - name: Upload to Release
       uses: softprops/action-gh-release@v2
       with:
-        files: | 
+        files: |
           workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/${{ github.event.inputs.BUILD_TARGET }}.img
           workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/*.zip
           workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/*vendor*.img
