@@ -139,17 +139,12 @@ jobs:
 
     - name: Building recovery
       run: |
-        set -eux
-        cd "${{ steps.pwd.outputs.workspace-folder }}"
-        # ensure python used is python2 for old scripts invoked by build system
-        export REPO_PYTHON=/usr/bin/python
-        export PATH="$HOME/bin:$PATH"
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
         lunch ${{ env.MAKEFILE_NAME }}-eng
         make clean
-        make ${{ env.BUILD_TARGET }}image -j$(nproc --all)
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        make ${{ env.BUILD_TARGET }}image -j$(nproc)
+      working-directory: workspace
 
     - name: Upload to Release
       uses: softprops/action-gh-release@v1
