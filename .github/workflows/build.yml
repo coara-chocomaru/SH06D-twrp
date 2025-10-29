@@ -85,6 +85,16 @@ jobs:
         repo sync -j$(nproc --all) --force-sync
       working-directory: workspace
       
+    - name: Patch checkpolicy to avoid __cxa_atexit linker error
+      run: |
+        if [ -f workspace/external/selinux/checkpolicy/Android.mk ]; then
+          echo "Patching checkpolicy Android.mk..."
+          sed -i '/LOCAL_CFLAGS :=/s/$/ -fno-use-cxa-atexit/' workspace/external/selinux/checkpolicy/Android.mk
+          sed -i '/LOCAL_CFLAGS :=/s/$/ -fcommon/' workspace/external/selinux/checkpolicy/Android.mk
+          echo "Patched: added -fno-use-cxa-atexit and -fcommon"
+        else
+          echo "checkpolicy Android.mk not found, skipping patch."
+        fi
     - name: Move files to workspace
       run: |
         mkdir -p workspace/${{ env.DEVICE_PATH }}
@@ -108,15 +118,6 @@ jobs:
         sudo apt -y install python2
         sudo update-alternatives --install /usr/bin/python python /usr/bin/python2 1
       continue-on-error: true
-    - name: Patch for checkpolicy error (add -fno-use-cxa-atexit)
-      run: |
-          cd ~/workspace
-          if [ -f external/selinux/checkpolicy/Android.mk ]; then
-            sed -i '/LOCAL_CFLAGS :=/s/$/ -fno-use-cxa-atexit/' external/selinux/checkpolicy/Android.mk
-            echo "Added -fno-use-cxa-atexit to checkpolicy Android.mk"
-          else
-            echo "checkpolicy Android.mk not found - skipping patch"
-          fi
     - name: Building recovery
       run: |
         source build/envsetup.sh
