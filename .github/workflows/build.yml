@@ -3,7 +3,7 @@ name: Recovery Build (Legacy)
 on:
   push:
     branches:
-      - main 
+      - main
 
 env:
   MANIFEST_URL: 'https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni'
@@ -14,6 +14,7 @@ env:
   DEVICE_NAME: 'sh06d'
   MAKEFILE_NAME: 'omni_sh06d'
   BUILD_TARGET: 'recovery'
+
 jobs:
   build:
     if: github.event.repository.owner.id == github.event.sender.id
@@ -33,22 +34,34 @@ jobs:
         echo "Makefile Name: ${{ env.MAKEFILE_NAME }}"
         echo "Build Target: ${{ env.BUILD_TARGET }}.img"
         echo "::endgroup::"
- 
+
     - name: Check Out
       uses: actions/checkout@v3
 
     - name: Cleanup
       uses: rokibhasansagar/slimhub_actions@main
 
-    - name: Prepare the environment
+    - name: Prepare the environment (install packages, ensure python -> python2)
       run: |
         sudo apt update
         sudo apt -y upgrade
-        sudo apt -y install gperf gcc-multilib gcc-10-multilib g++-multilib g++-10-multilib libc6-dev \
+
+        # Essential build packages (kept your original list, added rsync/curl and python2 tools)
+        sudo apt -y install \
+          gperf gcc-multilib gcc-10-multilib g++-multilib g++-10-multilib libc6-dev \
           lib32ncurses5-dev x11proto-core-dev libx11-dev tree lib32z-dev libgl1-mesa-dev libxml2-utils \
           xsltproc bc ccache lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev \
           libwxgtk3.0-gtk3-dev libxml2 lzop pngcrush schedtool squashfs-tools imagemagick \
-          libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libncurses5 python3
+          libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libncurses5 rsync curl unzip \
+          python2 python-is-python2
+
+        # Ensure `python` points to python2 (so repo and old scripts run)
+        sudo update-alternatives --install /usr/bin/python python /usr/bin/python2 1 || true
+        python --version
+
+        # Ensure ~/bin exists for repo binary
+        mkdir -p ~/bin
+        echo "Prepared environment"
 
     - name: Install OpenJDK
       uses: actions/setup-java@v3
@@ -60,35 +73,65 @@ jobs:
       if: ${{ startsWith(env.MANIFEST_URL, 'git@github.com') }}
       uses: webfactory/ssh-agent@v0.5.4
       with:
-          ssh-private-key: |
-              ${{ secrets.SSH_PRIVATE_KEY }}
+        ssh-private-key: |
+          ${{ secrets.SSH_PRIVATE_KEY }}
 
     - name: Install repo
       run: |
         mkdir -p ~/bin
-        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+        curl -sS https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
         chmod a+x ~/bin/repo
         sudo ln -sf ~/bin/repo /usr/bin/repo
+        echo "repo installed to ~/bin/repo and /usr/bin/repo"
       
     - name: Initialize repo
+      env:
+        REPO_PYTHON: /usr/bin/python
       run: |
         mkdir workspace
         cd workspace
+        # export workspace folder to outputs for later steps
         echo "workspace-folder=$(pwd)" >> $GITHUB_OUTPUT
         git config --global user.name "azwhikaru"
         git config --global user.email "azwhikaru+37921907@github.com"
+        # ensure repo uses python2 interpreter
+        export REPO_PYTHON=/usr/bin/python
         repo init --depth=1 -u ${{ env.MANIFEST_URL }} -b ${{ env.MANIFEST_BRANCH }}
       id: pwd
-          
+
+    - name: Set Swap Space
+      uses: pierotofy/set-swap-space@master
+      with:
+        swap-size-gb: 12
+
     - name: Repo Sync
+      env:
+        REPO_PYTHON: /usr/bin/python
       run: |
+        export REPO_PYTHON=/usr/bin/python
+        cd workspace
         repo sync -j$(nproc --all) --force-sync
       working-directory: workspace
-      
-    - name: Move files to workspace
+
+    - name: Checkout Device Tree (clone the device tree repo separately)
       run: |
-        mkdir -p workspace/${{ env.DEVICE_PATH }}
-        ls | grep -v workspace | xargs -I{} mv {} workspace/${{ env.DEVICE_PATH }}
+        # Clone device tree to a predictable location in the runner workspace
+        rm -rf $GITHUB_WORKSPACE/device-tree || true
+        git clone --depth=1 -b ${{ env.DEVICE_TREE_BRANCH }} ${{ env.DEVICE_TREE_URL }} $GITHUB_WORKSPACE/device-tree
+        ls -la $GITHUB_WORKSPACE/device-tree
+
+    - name: Copy device-tree into AOSP workspace device path (do NOT mv whole workspace)
+      run: |
+        WORKSPACE_DIR="${{ steps.pwd.outputs.workspace-folder }}"
+        TARGET_DIR="$WORKSPACE_DIR/${{ env.DEVICE_PATH }}"
+        echo "Workspace: $WORKSPACE_DIR"
+        echo "Target device path: $TARGET_DIR"
+        mkdir -p "$TARGET_DIR"
+        # use rsync to copy only the device tree contents into workspace/device/<...>
+        rsync -a --delete $GITHUB_WORKSPACE/device-tree/ "$TARGET_DIR/"
+        echo "Device tree copied to workspace device path"
+      env:
+        GITHUB_WORKSPACE: ${{ github.workspace }}
 
     - name: Clone common tree
       if: |
@@ -98,28 +141,24 @@ jobs:
         git clone ${{ env.COMMON_TREE_URL }} -b ${{ env.DEVICE_TREE_BRANCH }} ./${{ env.COMMON_PATH }}
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
-    - name: Set Swap Space
-      uses: pierotofy/set-swap-space@master
-      with:
-        swap-size-gb: 12
-
-    - name: Switch to Python2
-      run: |
-        sudo apt -y install python2
-        sudo update-alternatives --install /usr/bin/python python /usr/bin/python2 1
-      continue-on-error: true
-
     - name: Building recovery
       run: |
+        set -eux
+        cd "${{ steps.pwd.outputs.workspace-folder }}"
+        # ensure python used is python2 for old scripts invoked by build system
+        export REPO_PYTHON=/usr/bin/python
+        export PATH="$HOME/bin:$PATH"
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
-        lunch ${{ env.MAKEFILE_NAME }}-eng && make clean && make ${{ env.BUILD_TARGET }}image -j$(nproc --all)
+        lunch ${{ env.MAKEFILE_NAME }}-eng
+        make clean
+        make ${{ env.BUILD_TARGET }}image -j$(nproc --all)
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
     - name: Upload to Release
       uses: softprops/action-gh-release@v1
       with:
-        files: | 
+        files: |
           workspace/out/target/product/${{ env.DEVICE_NAME }}/${{ env.BUILD_TARGET }}.img
           workspace/out/target/product/${{ env.DEVICE_NAME }}/*.zip
           workspace/out/target/product/${{ env.DEVICE_NAME }}/*vendor*.img
