@@ -99,11 +99,6 @@ jobs:
         repo init --depth=1 -u ${{ env.MANIFEST_URL }} -b ${{ env.MANIFEST_BRANCH }}
       id: pwd
 
-    - name: Set Swap Space
-      uses: pierotofy/set-swap-space@master
-      with:
-        swap-size-gb: 12
-
     - name: Repo Sync
       env:
         REPO_PYTHON: /usr/bin/python
@@ -132,14 +127,18 @@ jobs:
         echo "Device tree copied to workspace device path"
       env:
         GITHUB_WORKSPACE: ${{ github.workspace }}
-
-    - name: Clone common tree
-      if: |
-        env.COMMON_TREE_URL != null
-        && env.COMMON_PATH != null
+        
+    - name: Set Swap Space
+      uses: pierotofy/set-swap-space@master
+      with:
+        swap-size-gb: 12
+        
+    - name: Configure CCACHE
       run: |
-        git clone ${{ env.COMMON_TREE_URL }} -b ${{ env.DEVICE_TREE_BRANCH }} ./${{ env.COMMON_PATH }}
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        export USE_CCACHE=1
+        export CCACHE_DIR=${{ github.workspace }}/.ccache
+        mkdir -p $CCACHE_DIR
+        ccache -M 50G || true
 
     - name: Building recovery
       run: |
