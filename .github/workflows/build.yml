@@ -80,10 +80,8 @@ jobs:
           
     - name: Repo Sync
       run: |
-        cd workspace
-        repo sync -c -j$(nproc) --force-sync --no-clone-bundle
+        repo sync -j$(nproc --all) --force-sync
       working-directory: workspace
-      timeout-minutes: 60
       
     - name: Clone device tree (if provided)
       if: env.DEVICE_TREE_URL != ''
