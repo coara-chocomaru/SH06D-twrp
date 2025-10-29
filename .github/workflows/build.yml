@@ -90,11 +90,9 @@ jobs:
       run: |
         mkdir workspace
         cd workspace
-        # export workspace folder to outputs for later steps
         echo "workspace-folder=$(pwd)" >> $GITHUB_OUTPUT
         git config --global user.name "azwhikaru"
         git config --global user.email "azwhikaru+37921907@github.com"
-        # ensure repo uses python2 interpreter
         export REPO_PYTHON=/usr/bin/python
         repo init --depth=1 -u ${{ env.MANIFEST_URL }} -b ${{ env.MANIFEST_BRANCH }}
       id: pwd
@@ -104,7 +102,6 @@ jobs:
         REPO_PYTHON: /usr/bin/python
       run: |
         export REPO_PYTHON=/usr/bin/python
-        cd workspace
         repo sync -j$(nproc --all) --force-sync
       working-directory: workspace
 
