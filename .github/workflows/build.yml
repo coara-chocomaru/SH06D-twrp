@@ -108,7 +108,15 @@ jobs:
         sudo apt -y install python2
         sudo update-alternatives --install /usr/bin/python python /usr/bin/python2 1
       continue-on-error: true
-
+    - name: Patch for checkpolicy error (add -fno-use-cxa-atexit)
+      run: |
+          cd ~/workspace
+          if [ -f external/selinux/checkpolicy/Android.mk ]; then
+            sed -i '/LOCAL_CFLAGS :=/s/$/ -fno-use-cxa-atexit/' external/selinux/checkpolicy/Android.mk
+            echo "Added -fno-use-cxa-atexit to checkpolicy Android.mk"
+          else
+            echo "checkpolicy Android.mk not found - skipping patch"
+          fi
     - name: Building recovery
       run: |
         source build/envsetup.sh
